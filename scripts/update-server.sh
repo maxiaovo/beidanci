@@ -33,7 +33,8 @@ rsync -a --delete \
   "$TMP/beidanci-main/" "$APP_DIR/" || fail "同步代码失败"
 
 write_status building "正在安装依赖并构建（可能需要几分钟）…"
-npm ci || fail "npm ci 失败"
+# 服务进程带 NODE_ENV=production，npm ci 默认会跳过 devDependencies（tailwind/typescript 等构建必需），必须显式包含
+npm ci --include=dev || fail "npm ci 失败"
 ./node_modules/.bin/prisma generate || fail "prisma generate 失败"
 npm run build || fail "构建失败"
 
