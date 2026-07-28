@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  username          String   @unique
+  passwordHash      String
+  role              String   @default("user") // admin | user
+  avatarUrl         String?  // 头像文件名，位于 data/avatars/
+  dailyNewTarget    Int      @default(20)
+  dailyReviewTarget Int      @default(100)
+  defaultCheckMode  String   @default("spell") // spell | choice
+  createdAt         DateTime @default(now())
+
+  books       Book[]
+  progresses  WordProgress[]
+  logs        StudyLog[]
+  assignments BookAssignment[]
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model Book {
+  id            String   @id @default(cuid())
+  name          String
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id])
+  status        String   @default("ready") // processing | ready | error
+  audioDone     Int      @default(0)
+  audioTotal    Int      @default(0)
+  analyzeDone   Int      @default(0) // AI 分析阶段进度（单元数）
+  analyzeTotal  Int      @default(0)
+  sharedWithAll Boolean  @default(false) // 分配给所有用户（含未来注册用户）
+  createdAt     DateTime @default(now())
+
+  units       Unit[]
+  assignments BookAssignment[]
+}
+
+model BookAssignment {
+  id        String   @id @default(cuid())
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([bookId, userId])
+}
+
+model Unit {
+  id         String @id @default(cuid())
+  bookId     String
+  book       Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  title      String
+  orderIndex Int
+
+  words Word[]
+}
+
+model Word {
+  id         String  @id @default(cuid())
+  unitId     String
+  unit       Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  orderIndex Int
+  text       String
+  phonetic   String  @default("")
+  pos        String  @default("")
+  meaningCn  String  @default("")
+  meaningEn  String  @default("")
+  segments   String  @default("[]") // JSON: [{part, type, meaningCn}]
+  mnemonic   String  @default("")
+  example1   String  @default("")
+  example1Cn String  @default("")
+  example2   String  @default("")
+  example2Cn String  @default("")
+  audioWord  String? // 文件名，位于 data/audio/
+  audioEx1   String?
+  audioEx2   String?
+
+  progresses WordProgress[]
+  logs       StudyLog[]
+}
+
+model WordProgress {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  wordId       String
+  word         Word      @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  stage        Int       @default(0)
+  nextReviewAt DateTime
+  lastResult   String    @default("") // correct | wrong | giveup
+  reps         Int       @default(0)
+  lapses       Int       @default(0)
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, wordId])
+}
+
+model StudyLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  wordId    String
+  word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  mode      String // learn | check-spell | check-choice
+  result    String // correct | wrong | giveup
+  createdAt DateTime @default(now())
+}

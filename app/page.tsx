@@ -1,65 +1,156 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+interface BookInfo {
+  id: string;
+  name: string;
+  status: string;
+  audioDone: number;
+  audioTotal: number;
+  total: number;
+  learned: number;
+  mastered: number;
+  units: number;
+}
+
+interface SessionStats {
+  reviewsCleared: boolean;
+  stats: {
+    dueCount: number;
+    reviewsDoneToday: number;
+    learnedToday: number;
+    dailyNewTarget: number;
+    defaultCheckMode: string;
+  };
+}
+
+const COVERS = ["#A8D8EA", "#FFB7B2", "#FFDAC1", "#E2F0CB", "#C7CEEA", "#FFD6E0"];
+
+export default function Dashboard() {
+  const [books, setBooks] = useState<BookInfo[]>([]);
+  const [session, setSession] = useState<SessionStats | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/books").then((r) => (r.status === 401 ? null : r.json())),
+      fetch("/api/session").then((r) => (r.status === 401 ? null : r.json())),
+    ]).then(([b, s]) => {
+      if (!b || !s) {
+        router.push("/login");
+        return;
+      }
+      setBooks(b.books);
+      setSession(s);
+      setLoaded(true);
+    });
+  }, [router]);
+
+  if (!loaded) {
+    return <div className="p-10 text-center text-black/40">加载中…</div>;
+  }
+
+  const due = session?.stats.dueCount ?? 0;
+  const cleared = session?.reviewsCleared ?? true;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="max-w-4xl mx-auto p-6 flex flex-col gap-8">
+      {/* 今日任务 */}
+      <section className="bg-white rounded-2xl shadow p-6">
+        <h2 className="font-bold text-lg mb-4">今日任务</h2>
+        <div className="flex items-center gap-6 flex-wrap">
+          <div className="text-center">
+            <div className={`text-4xl font-bold ${due > 0 ? "text-orange-500" : "text-green-500"}`}>{due}</div>
+            <div className="text-sm text-black/50 mt-1">待复习</div>
+          </div>
+          <div className="text-2xl text-black/20">→</div>
+          <div className="text-center">
+            <div className={`text-4xl font-bold ${cleared ? "text-blue-500" : "text-black/20"}`}>
+              {session?.stats.dailyNewTarget ?? 0}
+            </div>
+            <div className="text-sm text-black/50 mt-1">新词目标</div>
+          </div>
+          <div className="flex-1" />
+          <div className="flex gap-3">
+            {due > 0 ? (
+              <Link
+                href="/check?mode=review"
+                className="bg-orange-500 text-white rounded-xl px-6 py-3 font-bold hover:opacity-90"
+              >
+                先复习 {due} 词 →
+              </Link>
+            ) : (
+              <Link
+                href="/learn"
+                className="bg-blue-500 text-white rounded-xl px-6 py-3 font-bold hover:opacity-90"
+              >
+                开始背新词 →
+              </Link>
+            )}
+            <Link
+              href="/check"
+              className="border border-black/15 rounded-xl px-6 py-3 font-medium hover:bg-black/5"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+              自由检查
+            </Link>
+          </div>
+        </div>
+        {due > 0 && (
+          <p className="text-sm text-orange-500/80 mt-3">
+            按记忆曲线，先通过全部复习检查才能解锁新词哦
           </p>
+        )}
+      </section>
+
+      {/* 我的单词书 */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-lg">我的单词书</h2>
+          <Link href="/import" className="text-sm text-blue-500 hover:underline">+ 导入单词书</Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        {books.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow p-10 text-center text-black/40">
+            还没有单词书，<Link href="/import" className="text-blue-500 underline">去导入一本</Link>吧
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {books.map((b, i) => (
+              <Link
+                key={b.id}
+                href={`/words/${b.id}`}
+                className="rounded-2xl p-5 shadow hover:shadow-md transition-shadow flex flex-col gap-2"
+                style={{ background: COVERS[i % COVERS.length] }}
+              >
+                <div className="font-bold text-lg leading-snug">{b.name}</div>
+                <div className="text-sm text-black/50">{b.units} 个单元 · {b.total} 词</div>
+                {b.status === "processing" ? (
+                  <div className="text-sm text-black/60">
+                    导入中… 音频 {b.audioDone}/{b.audioTotal}
+                  </div>
+                ) : b.status === "error" ? (
+                  <div className="text-sm text-red-600">导入出错</div>
+                ) : (
+                  <div className="mt-auto">
+                    <div className="h-2 rounded-full bg-white/60 overflow-hidden">
+                      <div
+                        className="h-full bg-[#2d2a32]/70 rounded-full"
+                        style={{ width: b.total ? `${(b.learned / b.total) * 100}%` : "0%" }}
+                      />
+                    </div>
+                    <div className="text-xs text-black/50 mt-1">
+                      已学 {b.learned}/{b.total} · 掌握 {b.mastered}
+                    </div>
+                  </div>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
