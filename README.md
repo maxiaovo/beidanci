@@ -32,3 +32,7 @@ npm run deploy                                   # 2. 一键部署（scripts/dep
 `scripts/deploy.sh` 做的事：rsync 同步代码（排除 `.env`、`data/`、`prisma/dev.db` 等服务器侧数据）→ 服务器上 `npm ci && prisma generate && next build` → `sudo systemctl restart ledouniu-mx.service` → 验证 https://ledouniu.com 可访问。
 
 注意：服务器上的 `.env`、`prisma/dev.db`（生产数据库）、`data/audio/`（生成的音频）是生产数据，部署不会覆盖，也不要手动删除。
+
+## 系统自动更新
+
+管理员在「设置 → 系统更新」中可直接检查 GitHub 仓库（[maxiaovo/beidanci](https://github.com/maxiaovo/beidanci)）main 分支的版本：发现新版本时点击「立即更新」，服务器会自动下载最新代码、`npm ci && next build` 并重启服务（`scripts/update-server.sh`，进度与日志见服务器 `data/update-status.json` / `data/update.log`）。版本号以 `package.json` 的 `version` 为准，发布新版本时记得递增。
