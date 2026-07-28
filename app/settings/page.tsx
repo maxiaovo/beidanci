@@ -2,6 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  applyThemeVars,
+  DEFAULT_THEME,
+  getPreset,
+  getThemeVars,
+  hexColor,
+  THEME_PRESETS,
+  type ThemeState,
+  type ThemeVars,
+} from "@/lib/theme";
+
+const CUSTOM_KEYS: { key: keyof ThemeVars; label: string }[] = [
+  { key: "background", label: "页面背景" },
+  { key: "foreground", label: "主文字" },
+  { key: "accent", label: "主强调色" },
+  { key: "accent2", label: "次强调色" },
+];
 
 export default function SettingsPage() {
   const [newTarget, setNewTarget] = useState(20);
@@ -12,6 +29,9 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // 主题
+  const [theme, setTheme] = useState<ThemeState>(DEFAULT_THEME);
 
   // 系统更新（仅管理员）
   const [isAdmin, setIsAdmin] = useState(false);
@@ -63,6 +83,9 @@ export default function SettingsPage() {
       setReviewTarget(d.user.dailyReviewTarget);
       setCheckMode(d.user.defaultCheckMode);
       setAvatarUrl(d.user.avatarUrl);
+      const loadedTheme: ThemeState = d.user.theme || DEFAULT_THEME;
+      setTheme(loadedTheme);
+      applyThemeVars(getThemeVars(loadedTheme));
       if (d.user.role === "admin") {
         setIsAdmin(true);
         // 读取当前版本与更新状态；若有进行中的更新则继续轮询
@@ -135,6 +158,26 @@ export default function SettingsPage() {
     setTimeout(() => setAvatarMsg(""), 2500);
   }
 
+  function selectPreset(id: string) {
+    const next: ThemeState = { ...theme, presetId: id };
+    if (id !== "custom") {
+      next.custom = getPreset(id)?.vars ?? DEFAULT_THEME.custom;
+    }
+    setTheme(next);
+    applyThemeVars(getThemeVars(next));
+  }
+
+  function updateCustom(key: keyof ThemeVars, value: string) {
+    const clean = hexColor(value);
+    const next: ThemeState = {
+      ...theme,
+      presetId: "custom",
+      custom: { ...theme.custom, [key]: clean },
+    };
+    setTheme(next);
+    applyThemeVars(getThemeVars(next));
+  }
+
   async function save() {
     await fetch("/api/settings", {
       method: "PATCH",
@@ -143,10 +186,12 @@ export default function SettingsPage() {
         dailyNewTarget: Number(newTarget),
         dailyReviewTarget: Number(reviewTarget),
         defaultCheckMode: checkMode,
+        theme,
       }),
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+    router.refresh();
   }
 
   return (
@@ -179,6 +224,57 @@ export default function SettingsPage() {
             className="hidden"
           />
         </div>
+
+        {/* 主题 */}
+        <div>
+          <label className="text-sm text-black/60 block mb-2">配色主题</label>
+          <div className="grid grid-cols-3 gap-2">
+            {THEME_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => selectPreset(p.id)}
+                className={`flex items-center gap-2 rounded-lg border px-2 py-2 text-sm transition-colors ${
+                  theme.presetId === p.id
+                    ? "border-accent bg-accent/10"
+                    : "border-black/10 hover:bg-black/[.02]"
+                }`}
+              >
+                <span
+                  className="w-4 h-4 rounded-full border border-black/10 shrink-0"
+                  style={{
+                    background: `linear-gradient(135deg, ${p.vars.accent} 50%, ${p.vars.background} 50%)`,
+                  }}
+                />
+                <span className="truncate">{p.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {theme.presetId === "custom" && (
+          <div className="grid grid-cols-2 gap-3">
+            {CUSTOM_KEYS.map(({ key, label }) => (
+              <label key={key} className="flex flex-col gap-1">
+                <span className="text-xs text-black/60">{label}</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={theme.custom[key]}
+                    onChange={(e) => updateCustom(key, e.target.value)}
+                    className="w-8 h-8 p-0 border-0 rounded cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={theme.custom[key]}
+                    onChange={(e) => updateCustom(key, e.target.value)}
+                    className="flex-1 border rounded-lg px-2 py-1.5 text-sm uppercase outline-none focus:ring-2 ring-accent"
+                  />
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
         <div>
           <label className="text-sm text-black/60 block mb-1">每日新词目标（1-200）</label>
           <input

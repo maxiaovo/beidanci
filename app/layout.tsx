@@ -4,6 +4,8 @@ import "./globals.css";
 import Nav from "@/components/Nav";
 import { getSiteTitle } from "@/lib/settings";
 import { findSiteIcon } from "@/lib/site";
+import { getSessionUser } from "@/lib/session";
+import { getThemeVars, styleObjectFromVars, themeStateFromDb } from "@/lib/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,15 +29,20 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const user = await getSessionUser();
+  const themeState = themeStateFromDb(user?.themePreset, user?.themeCustom);
+  const themeVars = getThemeVars(themeState);
+
   return (
     <html
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      style={styleObjectFromVars(themeVars)}
     >
       <body className="min-h-full flex flex-col">
         <Nav />

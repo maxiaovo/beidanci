@@ -16,6 +16,8 @@ model User {
   dailyNewTarget    Int      @default(20)
   dailyReviewTarget Int      @default(100)
   defaultCheckMode  String   @default("spell") // spell | choice
+  themePreset       String?  // 主题预设 id：purple | green | blue | warm | dark | custom
+  themeCustom       String?  // JSON：{background, foreground, accent, accent2}
   createdAt         DateTime @default(now())
 
   books       Book[]

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
+import { themeStateFromDb } from "@/lib/theme";
 
 export async function GET() {
   const user = await getSessionUser();
@@ -13,6 +14,7 @@ export async function GET() {
       dailyNewTarget: user.dailyNewTarget,
       dailyReviewTarget: user.dailyReviewTarget,
       defaultCheckMode: user.defaultCheckMode,
+      theme: themeStateFromDb(user.themePreset, user.themeCustom),
     },
   });
 }
