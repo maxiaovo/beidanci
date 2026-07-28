@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SegmentWord from "@/components/SegmentWord";
@@ -11,13 +11,26 @@ import { playAudio, postProgress, StudyWord } from "@/lib/client";
 type Phase = "show" | "segments" | "ex1" | "ex2" | "trace" | "traceEx1" | "traceEx2";
 
 const PHASE_HINT: Record<Phase, string> = {
-  show: "按回车，看词根词缀拆解",
-  segments: "按回车，看例句 1",
-  ex1: "按回车，看例句 2",
-  ex2: "按回车，开始临摹单词",
+  show: "点屏幕右侧，看词根词缀拆解",
+  segments: "点屏幕右侧，看例句 1",
+  ex1: "点屏幕右侧，看例句 2",
+  ex2: "点屏幕右侧，开始临摹单词",
   trace: "",
   traceEx1: "",
   traceEx2: "",
+};
+
+const NEXT_PHASE: Partial<Record<Phase, Phase>> = {
+  show: "segments",
+  segments: "ex1",
+  ex1: "ex2",
+  ex2: "trace",
+};
+
+const PREV_PHASE: Partial<Record<Phase, Phase>> = {
+  segments: "show",
+  ex1: "segments",
+  ex2: "ex1",
 };
 
 export default function LearnPage() {
@@ -60,26 +73,41 @@ export default function LearnPage() {
     }
   }, [word, idx, words.length]);
 
-  // 回车推进阶段（临摹阶段由 TypingTrainer 自己接管键盘）
+  // 推进 / 回退阶段（临摹阶段由 TypingTrainer 自己接管，不参与）
+  const advance = useCallback(() => {
+    setPhase((prev) => NEXT_PHASE[prev] ?? prev);
+  }, []);
+
+  const goBack = useCallback(() => {
+    setPhase((prev) => PREV_PHASE[prev] ?? prev);
+  }, []);
+
+  // 键盘：回车/右方向键下一步，左方向键上一步
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Enter") return;
       const p = phaseRef.current;
       if (p === "trace" || p === "traceEx1" || p === "traceEx2") return;
-      e.preventDefault();
-      setPhase((prev) => {
-        const next: Record<string, Phase> = {
-          show: "segments",
-          segments: "ex1",
-          ex1: "ex2",
-          ex2: "trace",
-        };
-        return next[prev] ?? prev;
-      });
+      if (e.key === "Enter" || e.key === "ArrowRight") {
+        e.preventDefault();
+        advance();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goBack();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [advance, goBack]);
+
+  // 触屏/鼠标：点屏幕右半 = 下一步，左半 = 上一步（点到按钮、链接等交互元素时不触发）
+  function onTapNav(e: ReactMouseEvent<HTMLDivElement>) {
+    const p = phaseRef.current;
+    if (p === "trace" || p === "traceEx1" || p === "traceEx2") return;
+    const el = e.target as HTMLElement;
+    if (el.closest("button, a, input, label, select, textarea")) return;
+    if (e.clientX >= window.innerWidth / 2) advance();
+    else goBack();
+  }
 
   // 进入 segments 阶段自动播放单词读音
   useEffect(() => {
@@ -141,9 +169,12 @@ export default function LearnPage() {
   const inTrace = phase === "trace" || phase === "traceEx1" || phase === "traceEx2";
 
   return (
-    <div className="max-w-4xl mx-auto p-6 flex flex-col items-center gap-6 select-none">
+    <div
+      className="max-w-4xl mx-auto p-4 sm:p-6 flex flex-col items-center gap-6 select-none"
+      onClick={onTapNav}
+    >
       {/* 顶部进度 + 扩展模式开关 */}
-      <div className="w-full flex items-center justify-between text-sm text-black/50">
+      <div className="w-full flex items-center justify-between flex-wrap gap-x-4 gap-y-2 text-sm text-black/50">
         <span>{word.bookName} · {word.unitTitle}</span>
         <span>第 {idx + 1} / {words.length} 词</span>
         <label className="flex items-center gap-2 cursor-pointer">
@@ -158,12 +189,12 @@ export default function LearnPage() {
       </div>
 
       {/* 大卡片 */}
-      <div className="w-full bg-white rounded-3xl shadow-lg p-10 min-h-[26rem] flex flex-col items-center justify-center gap-8">
+      <div className="w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 min-h-[26rem] flex flex-col items-center justify-center gap-8">
         {phase === "show" && (
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className="text-7xl font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer"
+              className="text-5xl sm:text-7xl font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all"
               title="点击播放读音"
             >
               {word.text}
@@ -190,7 +221,7 @@ export default function LearnPage() {
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className="text-4xl font-bold hover:opacity-70 cursor-pointer"
+              className="text-3xl sm:text-4xl font-bold hover:opacity-70 cursor-pointer break-all"
             >
               {word.text}
             </button>
@@ -201,7 +232,7 @@ export default function LearnPage() {
                   phase === "ex1" ? "bg-accent/30" : "opacity-40 hover:opacity-70"
                 }`}
               >
-                <div className="text-2xl">{word.example1}</div>
+                <div className="text-xl sm:text-2xl">{word.example1}</div>
                 <div className="text-black/50 mt-1">{word.example1Cn}</div>
               </button>
               {phase === "ex2" && (
@@ -209,7 +240,7 @@ export default function LearnPage() {
                   onClick={() => playAudio(word.audioEx2)}
                   className="text-center cursor-pointer rounded-xl p-3 bg-[#FFDAC1]/30"
                 >
-                  <div className="text-2xl">{word.example2}</div>
+                  <div className="text-xl sm:text-2xl">{word.example2}</div>
                   <div className="text-black/50 mt-1">{word.example2Cn}</div>
                 </button>
               )}
@@ -220,28 +251,28 @@ export default function LearnPage() {
         {phase === "trace" && (
           <>
             <div className="text-black/40">{word.phonetic} · {word.meaningCn}</div>
-            <TypingTrainer target={word.text} onComplete={afterTrace} fontSize="text-6xl" />
+            <TypingTrainer target={word.text} onComplete={afterTrace} fontSize="text-4xl sm:text-6xl" />
           </>
         )}
 
         {phase === "traceEx1" && (
           <>
             <div className="text-black/50">抄写例句 1 / 2</div>
-            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSize="text-3xl" />
+            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSize="text-2xl sm:text-3xl" />
           </>
         )}
 
         {phase === "traceEx2" && (
           <>
             <div className="text-black/50">抄写例句 2 / 2</div>
-            <TypingTrainer target={word.example2} onComplete={finishWord} fontSize="text-3xl" />
+            <TypingTrainer target={word.example2} onComplete={finishWord} fontSize="text-2xl sm:text-3xl" />
           </>
         )}
       </div>
 
       {!inTrace && (
-        <div className="text-black/40 text-sm bg-white/70 rounded-full px-4 py-1.5">
-          ⏎ {PHASE_HINT[phase]}
+        <div className="text-black/40 text-sm bg-white/70 rounded-full px-4 py-1.5 text-center">
+          👆 {PHASE_HINT[phase]} · 点左侧返回上一步
         </div>
       )}
     </div>

@@ -205,10 +205,10 @@ function CheckInner() {
   if (!isReview && quizMode === null) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
-        <div className="flex gap-6">
+        <div className="flex flex-col sm:flex-row gap-6 px-4">
           <button
             onClick={() => setQuizMode("spell")}
-            className="bg-white rounded-2xl shadow-lg p-10 w-64 hover:shadow-xl transition-shadow text-center"
+            className="bg-white rounded-2xl shadow-lg p-10 w-64 max-w-full hover:shadow-xl transition-shadow text-center"
           >
             <div className="text-4xl mb-3">⌨️</div>
             <div className="font-bold text-lg">拼写检查</div>
@@ -216,7 +216,7 @@ function CheckInner() {
           </button>
           <button
             onClick={() => setQuizMode("choice")}
-            className="bg-white rounded-2xl shadow-lg p-10 w-64 hover:shadow-xl transition-shadow text-center"
+            className="bg-white rounded-2xl shadow-lg p-10 w-64 max-w-full hover:shadow-xl transition-shadow text-center"
           >
             <div className="text-4xl mb-3">🎯</div>
             <div className="font-bold text-lg">选择检查</div>
@@ -250,7 +250,7 @@ function CheckInner() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-6 flex flex-col items-center gap-6">
+    <div className="max-w-3xl mx-auto p-4 sm:p-6 flex flex-col items-center gap-6">
       <div className="w-full flex items-center justify-between text-sm text-black/50">
         <span>
           {isReview ? "📅 复习检查" : "💪 自由练习"} ·{" "}
@@ -261,12 +261,12 @@ function CheckInner() {
         <span>{idx + 1} / {words.length}</span>
       </div>
 
-      <div key={`${word.id}-${shake}`} className={`w-full bg-white rounded-3xl shadow-lg p-10 min-h-[22rem] flex flex-col items-center justify-center gap-8 ${shake > 0 && spellState === "wrong" ? "animate-shake" : ""}`}>
+      <div key={`${word.id}-${shake}`} className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 min-h-[22rem] flex flex-col items-center justify-center gap-8 ${shake > 0 && spellState === "wrong" ? "animate-shake" : ""}`}>
         {quizMode === "spell" ? (
           <>
             <div className="text-center">
               <div className="text-black/40 text-sm mb-2">{word.pos}</div>
-              <div className="text-4xl font-bold">{word.meaningCn}</div>
+              <div className="text-3xl sm:text-4xl font-bold">{word.meaningCn}</div>
             </div>
             {showAnswer ? (
               <div className="text-center flex flex-col items-center gap-3">
@@ -315,7 +315,7 @@ function CheckInner() {
             <div className="text-center flex items-center gap-3">
               <button
                 onClick={() => playAudio(word.audioWord ?? null)}
-                className="text-5xl font-bold hover:opacity-70 cursor-pointer"
+                className="text-4xl sm:text-5xl font-bold hover:opacity-70 cursor-pointer break-all"
               >
                 {word.text}
               </button>

@@ -49,8 +49,8 @@ export default function Nav() {
     }`;
 
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b border-black/5 bg-white/60 backdrop-blur sticky top-0 z-40">
-      <Link href="/" className="font-bold text-lg tracking-wide flex items-center gap-2">
+    <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-black/5 bg-white/60 backdrop-blur sticky top-0 z-40">
+      <Link href="/" className="font-bold text-lg tracking-wide flex items-center gap-2 shrink-0">
         {site.hasSiteIcon ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/api/site-icon" alt="" className="w-6 h-6 rounded object-contain" />
@@ -60,7 +60,7 @@ export default function Nav() {
         {site.siteTitle}
       </Link>
       {me && (
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-1 overflow-x-auto whitespace-nowrap">
           <Link href="/" className={linkCls("/")}>首页</Link>
           <Link href="/words" className={linkCls("/words")}>单词书</Link>
           <Link href="/learn" className={linkCls("/learn")}>背单词</Link>
@@ -70,7 +70,7 @@ export default function Nav() {
           <Link href="/settings" className={linkCls("/settings")}>设置</Link>
         </nav>
       )}
-      <div className="flex items-center gap-3 text-sm">
+      <div className="flex items-center gap-3 text-sm shrink-0">
         {me ? (
           <>
             {me.avatarUrl ? (
@@ -85,7 +85,7 @@ export default function Nav() {
                 {me.username.slice(0, 1).toUpperCase()}
               </span>
             )}
-            <span className="text-foreground/60">{me.username}</span>
+            <span className="text-foreground/60 hidden sm:inline">{me.username}</span>
             <button onClick={logout} className="text-foreground/50 hover:text-foreground">
               退出
             </button>
