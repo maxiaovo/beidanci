@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 背单词（vocab-app）
 
-## Getting Started
+英语单词学习应用：导入词书（docx/xlsx/txt/csv）→ DeepSeek 自动分析音标/词根/例句 → MiMo TTS 生成读音 → 按 SRS 记忆曲线学习与检查。支持多用户、管理员分配词书。
 
-First, run the development server:
+## 本地开发
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npx prisma migrate deploy
+npm run dev        # http://localhost:3003
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+首次使用创建管理员账号：
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx tsx scripts/seed.ts          # 默认 admin / admin123
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+环境变量（`.env`）：`DATABASE_URL`、`SESSION_SECRET`、`DEEPSEEK_API_KEY`、`MIMO_API_KEY` 等，参考服务器上的配置。
 
-## Learn More
+## 部署（生产：https://ledouniu.com）
 
-To learn more about Next.js, take a look at the following resources:
+服务器通过 `~/.ssh/config` 的 `ledouniu.com` 别名访问，应用位于 `~/ledouniu/vocab-app`，由 systemd 服务 `ledouniu-mx.service` 运行（`start.sh.local` → `prisma migrate deploy` + `next start` 监听 127.0.0.1:3003，nginx 反向代理 HTTPS）。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**发布流程约定：每个版本先 git 提交并推送，再部署。**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+git add -A && git commit -m "..." && git push   # 1. 提交版本
+npm run deploy                                   # 2. 一键部署（scripts/deploy.sh）
+```
 
-## Deploy on Vercel
+`scripts/deploy.sh` 做的事：rsync 同步代码（排除 `.env`、`data/`、`prisma/dev.db` 等服务器侧数据）→ 服务器上 `npm ci && prisma generate && next build` → `sudo systemctl restart ledouniu-mx.service` → 验证 https://ledouniu.com 可访问。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+注意：服务器上的 `.env`、`prisma/dev.db`（生产数据库）、`data/audio/`（生成的音频）是生产数据，部署不会覆盖，也不要手动删除。
