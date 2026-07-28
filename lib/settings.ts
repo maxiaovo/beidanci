@@ -17,3 +17,57 @@ export async function setSetting(key: string, value: string) {
 export async function isRegistrationOpen(): Promise<boolean> {
   return (await getSetting("registration_open", "true")) === "true";
 }
+
+// ---- AI 解析配置（Setting 表 > 环境变量 > 默认值）----
+export const DEFAULT_AI_MODEL = "deepseek-v4-flash";
+export const DEFAULT_AI_BASE_URL = "https://api.deepseek.com";
+
+export const DEFAULT_AI_PROMPT = `你是英语词汇教学专家。下面是某课程单元的原始词汇文本，可能格式杂乱。
+请提取每一个单词/词组，输出严格的 JSON 数组（不要输出任何其他文字、不要用 markdown 代码块），每个元素字段如下：
+- text: 单词原形（小写，词组保留空格）
+- phonetic: 英式音标，带斜杠，如 /ˈæn.θər/
+- pos: 词性缩写，如 n. v. adj. phrase
+- meaningCn: 中文释义（简明，多个义项用；分隔）
+- meaningEn: 英文释义（简明，适合六年级学生）
+- segments: 词根词缀切分数组，把单词拆成 前缀/词根/后缀，每段 {part, type, meaningCn}；type 只能是 "prefix"|"root"|"suffix"|"word"；无法拆解的简单词就给单元素数组 type 为 "word"，meaningCn 为整体释义；所有 part 拼接起来必须严格等于 text（词组按空格拆成各单词即可）
+- mnemonic: 词根词缀记忆法，中文，一两句话说明构词逻辑
+- example1/example2: 两个英文例句（简单地道，适合六年级，必须包含该单词）
+- example1Cn/example2Cn: 对应中文翻译
+
+原始文本：
+---
+%s
+---`;
+
+export interface AIConfig {
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  prompt: string;
+  thinking: boolean; // 是否开启思考模式（默认关闭）
+  // 各项是否来自管理员覆盖（用于面板展示）
+  overridden: { model: boolean; baseUrl: boolean; apiKey: boolean; prompt: boolean };
+}
+
+export async function getAIConfig(): Promise<AIConfig> {
+  const [model, baseUrl, apiKey, prompt, thinking] = await Promise.all([
+    getSetting("ai_model"),
+    getSetting("ai_base_url"),
+    getSetting("ai_api_key"),
+    getSetting("ai_prompt"),
+    getSetting("ai_thinking"),
+  ]);
+  return {
+    model: model || process.env.DEEPSEEK_MODEL || DEFAULT_AI_MODEL,
+    baseUrl: baseUrl || process.env.DEEPSEEK_BASE_URL || DEFAULT_AI_BASE_URL,
+    apiKey: apiKey || process.env.DEEPSEEK_API_KEY || "",
+    prompt: prompt || DEFAULT_AI_PROMPT,
+    thinking: thinking === "true", // 默认关闭
+    overridden: {
+      model: !!model,
+      baseUrl: !!baseUrl,
+      apiKey: !!apiKey,
+      prompt: !!prompt,
+    },
+  };
+}

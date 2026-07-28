@@ -1,4 +1,7 @@
-// DeepSeek v4-pro：把单元原始文本分析成结构化单词 JSON
+// DeepSeek：把单元原始文本分析成结构化单词 JSON
+// 模型/Key/提示词优先取管理员在 Setting 表中的配置，默认 deepseek-v4-flash、关闭思考模式
+import { getAIConfig } from "./settings";
+
 export interface AnalyzedWord {
   text: string;
   phonetic: string;
@@ -13,30 +16,16 @@ export interface AnalyzedWord {
   example2Cn: string;
 }
 
-const PROMPT = `你是英语词汇教学专家。下面是某课程单元的原始词汇文本，可能格式杂乱。
-请提取每一个单词/词组，输出严格的 JSON 数组（不要输出任何其他文字、不要用 markdown 代码块），每个元素字段如下：
-- text: 单词原形（小写，词组保留空格）
-- phonetic: 英式音标，带斜杠，如 /ˈæn.θər/
-- pos: 词性缩写，如 n. v. adj. phrase
-- meaningCn: 中文释义（简明，多个义项用；分隔）
-- meaningEn: 英文释义（简明，适合六年级学生）
-- segments: 词根词缀切分数组，把单词拆成 前缀/词根/后缀，每段 {part, type, meaningCn}；type 只能是 "prefix"|"root"|"suffix"|"word"；无法拆解的简单词就给单元素数组 type 为 "word"，meaningCn 为整体释义；所有 part 拼接起来必须严格等于 text（词组按空格拆成各单词即可）
-- mnemonic: 词根词缀记忆法，中文，一两句话说明构词逻辑
-- example1/example2: 两个英文例句（简单地道，适合六年级，必须包含该单词）
-- example1Cn/example2Cn: 对应中文翻译
-
-原始文本：
----
-%s
----`;
-
 export async function analyzeUnitText(rawText: string): Promise<AnalyzedWord[]> {
-  const url = `${process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com"}/chat/completions`;
+  const cfg = await getAIConfig();
+  const url = `${cfg.baseUrl}/chat/completions`;
   const body = {
-    model: process.env.DEEPSEEK_MODEL || "deepseek-v4-pro",
-    messages: [{ role: "user", content: PROMPT.replace("%s", rawText) }],
+    model: cfg.model,
+    messages: [{ role: "user", content: cfg.prompt.replace("%s", rawText) }],
     temperature: 0.2,
     stream: false,
+    // 思考模式：默认关闭（DeepSeek v4 系列支持 thinking 参数）
+    ...(cfg.thinking ? {} : { thinking: { type: "disabled" } }),
   };
 
   let lastErr: unknown = null;
@@ -46,7 +35,7 @@ export async function analyzeUnitText(rawText: string): Promise<AnalyzedWord[]> 
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+          Authorization: `Bearer ${cfg.apiKey}`,
         },
         body: JSON.stringify(body),
       });

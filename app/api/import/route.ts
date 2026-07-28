@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { extractText, splitIntoUnits } from "@/lib/parsers";
-import { runImport } from "@/lib/import-runner";
+import { enqueueImport } from "@/lib/import-runner";
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
   const units = splitIntoUnits(text);
   const book = await prisma.book.create({
-    data: { name: bookName, ownerId: user.id, status: "processing", sharedWithAll: assignAll },
+    data: { name: bookName, ownerId: user.id, status: "queued", sharedWithAll: assignAll },
   });
   if (assignTo.length) {
     // 新书无历史分配，不会重复
@@ -45,8 +45,8 @@ export async function POST(req: Request) {
     });
   }
 
-  // 后台异步跑分析+音频，前端轮询状态
-  void runImport(book.id, units);
+  // 后台串行队列跑分析+音频，前端轮询状态
+  enqueueImport(book.id, units);
 
   return NextResponse.json({ ok: true, bookId: book.id, units: units.length });
 }

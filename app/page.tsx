@@ -127,12 +127,14 @@ export default function Dashboard() {
               >
                 <div className="font-bold text-lg leading-snug">{b.name}</div>
                 <div className="text-sm text-black/50">{b.units} 个单元 · {b.total} 词</div>
-                {b.status === "processing" ? (
+                {b.status === "processing" || b.status === "queued" ? (
                   <div className="text-sm text-black/60">
-                    导入中… 音频 {b.audioDone}/{b.audioTotal}
+                    {b.status === "queued" ? "排队等待处理…" : `导入中… 音频 ${b.audioDone}/${b.audioTotal}`}
                   </div>
                 ) : b.status === "error" ? (
                   <div className="text-sm text-red-600">导入出错</div>
+                ) : b.status === "stopped" ? (
+                  <div className="text-sm text-black/50">已停止导入（{b.total} 词可用）</div>
                 ) : (
                   <div className="mt-auto">
                     <div className="h-2 rounded-full bg-white/60 overflow-hidden">

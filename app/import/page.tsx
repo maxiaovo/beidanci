@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-type Phase = "queued" | "uploading" | "processing" | "ready" | "error";
+type Phase = "queued" | "uploading" | "waiting" | "processing" | "ready" | "stopped" | "error";
 
 interface Task {
   key: string;
@@ -33,10 +33,21 @@ interface BookStatus {
 const PHASE_LABEL: Record<Phase, string> = {
   queued: "排队等待上传",
   uploading: "上传中…",
+  waiting: "排队等待处理",
   processing: "处理中",
   ready: "✓ 导入完成",
+  stopped: "已停止",
   error: "导入出错",
 };
+
+// 后端书状态 → 前端任务阶段
+function phaseOf(status: string): Phase {
+  if (status === "queued") return "waiting";
+  if (status === "processing") return "processing";
+  if (status === "ready") return "ready";
+  if (status === "stopped") return "stopped";
+  return "error";
+}
 
 export default function ImportPage() {
   const [files, setFiles] = useState<File[]>([]);
@@ -67,11 +78,11 @@ export default function ImportPage() {
       if (br.ok) {
         const bd = await br.json();
         const running: Task[] = bd.books
-          .filter((b: BookStatus) => b.status === "processing")
+          .filter((b: BookStatus) => b.status === "processing" || b.status === "queued")
           .map((b: BookStatus) => ({
             key: b.id,
             name: b.name,
-            phase: "processing" as Phase,
+            phase: phaseOf(b.status),
             bookId: b.id,
             analyzeDone: b.analyzeDone,
             analyzeTotal: b.analyzeTotal,
@@ -103,7 +114,7 @@ export default function ImportPage() {
           updateTask(next.key, { phase: "error", error: data.error || "导入失败" });
           return;
         }
-        updateTask(next.key, { phase: "processing", bookId: data.bookId });
+        updateTask(next.key, { phase: "waiting", bookId: data.bookId });
       } catch {
         updateTask(next.key, { phase: "error", error: "网络错误" });
       }
@@ -111,21 +122,21 @@ export default function ImportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks]);
 
-  // 轮询所有处理中任务的进度
+  // 轮询所有排队/处理中任务的进度
   useEffect(() => {
-    if (!tasks.some((t) => t.phase === "processing")) return;
+    if (!tasks.some((t) => t.phase === "processing" || t.phase === "waiting")) return;
     const timer = setInterval(async () => {
       const r = await fetch("/api/books");
       if (!r.ok) return;
       const d = await r.json();
       setTasks((prev) =>
         prev.map((t) => {
-          if (t.phase !== "processing" || !t.bookId) return t;
+          if ((t.phase !== "processing" && t.phase !== "waiting") || !t.bookId) return t;
           const b = d.books.find((x: BookStatus) => x.id === t.bookId);
           if (!b) return t;
           return {
             ...t,
-            phase: b.status === "processing" ? ("processing" as Phase) : b.status === "ready" ? ("ready" as Phase) : ("error" as Phase),
+            phase: phaseOf(b.status),
             analyzeDone: b.analyzeDone,
             analyzeTotal: b.analyzeTotal,
             audioDone: b.audioDone,
@@ -139,6 +150,23 @@ export default function ImportPage() {
 
   function updateTask(key: string, patch: Partial<Task>) {
     setTasks((prev) => prev.map((t) => (t.key === key ? { ...t, ...patch } : t)));
+  }
+
+  async function stopImport(t: Task) {
+    if (!t.bookId) return;
+    updateTask(t.key, { phase: "stopped" });
+    await fetch(`/api/books/${t.bookId}/stop`, { method: "POST" });
+  }
+
+  async function deleteBook(t: Task) {
+    if (!t.bookId) {
+      setTasks((prev) => prev.filter((x) => x.key !== t.key));
+      return;
+    }
+    if (!confirm(`确定删除「${t.name}」吗？书中的单词、学习记录和音频都会删除，不可恢复。`)) return;
+    const res = await fetch(`/api/books/${t.bookId}`, { method: "DELETE" });
+    if (res.ok) setTasks((prev) => prev.filter((x) => x.key !== t.key));
+    else alert("删除失败，请重试");
   }
 
   function submit(e: React.FormEvent) {
@@ -264,11 +292,29 @@ export default function ImportPage() {
               <div key={t.key} className="bg-white rounded-2xl shadow p-5">
                 <div className="flex items-center justify-between">
                   <div className="font-bold">{t.name}</div>
-                  <div className={`text-sm ${t.phase === "error" ? "text-red-500" : t.phase === "ready" ? "text-green-600" : "text-black/50"}`}>
-                    {PHASE_LABEL[t.phase]}
+                  <div className="flex items-center gap-3">
+                    <div className={`text-sm ${t.phase === "error" ? "text-red-500" : t.phase === "ready" ? "text-green-600" : "text-black/50"}`}>
+                      {PHASE_LABEL[t.phase]}
+                    </div>
+                    {(t.phase === "processing" || t.phase === "waiting") && (
+                      <button
+                        onClick={() => stopImport(t)}
+                        className="text-sm text-red-500 border border-red-200 rounded-lg px-2.5 py-1 hover:bg-red-50"
+                      >
+                        停止导入
+                      </button>
+                    )}
+                    {(t.phase === "ready" || t.phase === "stopped" || t.phase === "error") && (
+                      <button
+                        onClick={() => deleteBook(t)}
+                        className="text-sm text-black/40 border border-black/10 rounded-lg px-2.5 py-1 hover:bg-black/5"
+                      >
+                        删除
+                      </button>
+                    )}
                   </div>
                 </div>
-                {(t.phase === "processing" || t.phase === "uploading" || t.phase === "queued") && (
+                {(t.phase === "processing" || t.phase === "uploading" || t.phase === "queued" || t.phase === "waiting") && (
                   <>
                     <div className="text-sm text-black/60 mt-2">{p.label}</div>
                     <div className="h-2 rounded-full bg-black/5 overflow-hidden mt-2">
@@ -293,6 +339,9 @@ export default function ImportPage() {
                 )}
                 {t.phase === "error" && (
                   <div className="text-red-500 text-sm mt-2">{t.error || "导入出错，请重试"}</div>
+                )}
+                {t.phase === "stopped" && (
+                  <div className="text-black/40 text-sm mt-2">已停止导入，已生成的单词和音频会保留。</div>
                 )}
               </div>
             );

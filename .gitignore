@@ -45,3 +45,4 @@ prisma/dev.db
 prisma/dev.db-journal
 data/audio/
 data/avatars/
+data/packages/

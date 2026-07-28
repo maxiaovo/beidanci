@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { bookVisibleWhere } from "@/lib/book-access";
+import { requestStop } from "@/lib/import-runner";
+import { AUDIO_DIR } from "@/lib/mimo-tts";
 
 // 单词列表浏览：书 → 单元 → 单词
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -57,4 +61,40 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       }),
     })),
   });
+}
+
+// 删除单词书：先停止导入，再删除音频文件与数据库记录（单元/单词/进度/日志级联删除）
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  const { id } = await params;
+
+  const book = await prisma.book.findUnique({ where: { id } });
+  if (!book) return NextResponse.json({ error: "单词书不存在" }, { status: 404 });
+  if (book.ownerId !== user.id && user.role !== "admin") {
+    return NextResponse.json({ error: "无权操作" }, { status: 403 });
+  }
+
+  // 若正在导入，先请求停止；等待其退出当前 AI 调用
+  if (book.status === "queued" || book.status === "processing") {
+    requestStop(id);
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+
+  // 删除磁盘上的音频文件
+  const words = await prisma.word.findMany({
+    where: { unit: { bookId: id } },
+    select: { audioWord: true, audioEx1: true, audioEx2: true },
+  });
+  for (const w of words) {
+    for (const f of [w.audioWord, w.audioEx1, w.audioEx2]) {
+      if (!f) continue;
+      try {
+        fs.unlinkSync(path.join(AUDIO_DIR, f));
+      } catch { /* 文件可能不存在，忽略 */ }
+    }
+  }
+
+  await prisma.book.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
 }
