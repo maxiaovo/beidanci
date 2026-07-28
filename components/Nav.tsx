@@ -10,8 +10,14 @@ interface Me {
   avatarUrl: string | null;
 }
 
+interface SiteCfg {
+  siteTitle: string;
+  hasSiteIcon: boolean;
+}
+
 export default function Nav() {
   const [me, setMe] = useState<Me | null>(null);
+  const [site, setSite] = useState<SiteCfg>({ siteTitle: "背单词", hasSiteIcon: false });
   const pathname = usePathname();
   const router = useRouter();
 
@@ -20,6 +26,10 @@ export default function Nav() {
       .then((r) => r.json())
       .then((d) => setMe(d.user))
       .catch(() => setMe(null));
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((d) => setSite({ siteTitle: d.siteTitle || "背单词", hasSiteIcon: !!d.hasSiteIcon }))
+      .catch(() => {});
   }, [pathname]);
 
   const isAuthPage = pathname === "/login" || pathname === "/register";
@@ -34,14 +44,20 @@ export default function Nav() {
   const linkCls = (href: string) =>
     `px-3 py-1.5 rounded-full text-sm transition-colors ${
       (href === "/" ? pathname === "/" : pathname.startsWith(href))
-        ? "bg-[#2d2a32] text-white"
-        : "text-[#2d2a32]/70 hover:bg-black/5"
+        ? "bg-foreground text-white"
+        : "text-foreground/70 hover:bg-black/5"
     }`;
 
   return (
     <header className="flex items-center justify-between px-6 py-3 border-b border-black/5 bg-white/60 backdrop-blur sticky top-0 z-40">
-      <Link href="/" className="font-bold text-lg tracking-wide">
-        📖 背单词
+      <Link href="/" className="font-bold text-lg tracking-wide flex items-center gap-2">
+        {site.hasSiteIcon ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/api/site-icon" alt="" className="w-6 h-6 rounded object-contain" />
+        ) : (
+          <span>📖</span>
+        )}
+        {site.siteTitle}
       </Link>
       {me && (
         <nav className="flex items-center gap-1">
@@ -65,17 +81,17 @@ export default function Nav() {
                 className="w-7 h-7 rounded-full object-cover"
               />
             ) : (
-              <span className="w-7 h-7 rounded-full bg-[#A8D8EA] flex items-center justify-center text-xs font-bold">
+              <span className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold">
                 {me.username.slice(0, 1).toUpperCase()}
               </span>
             )}
-            <span className="text-[#2d2a32]/60">{me.username}</span>
-            <button onClick={logout} className="text-[#2d2a32]/50 hover:text-[#2d2a32]">
+            <span className="text-foreground/60">{me.username}</span>
+            <button onClick={logout} className="text-foreground/50 hover:text-foreground">
               退出
             </button>
           </>
         ) : (
-          <Link href="/login" className="text-[#2d2a32]/70">登录</Link>
+          <Link href="/login" className="text-foreground/70">登录</Link>
         )}
       </div>
     </header>

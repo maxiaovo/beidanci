@@ -36,6 +36,7 @@ function CheckInner() {
   const [distractors, setDistractors] = useState<string[]>([]);
   const [idx, setIdx] = useState(0);
   const [quizMode, setQuizMode] = useState<QuizMode | null>(null);
+  const [strict, setStrict] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [finished, setFinished] = useState(false);
   const [reviewCleared, setReviewCleared] = useState(false);
@@ -54,6 +55,11 @@ function CheckInner() {
   const word = words[idx];
 
   const load = useCallback(async () => {
+    // 站点配置（强检查开关）
+    const c = await fetch("/api/config");
+    const isStrict = c.ok ? !!(await c.json()).strictCheck : false;
+    setStrict(isStrict);
+
     if (isReview) {
       const r = await fetch("/api/session");
       if (r.status === 401) return router.push("/login");
@@ -62,7 +68,7 @@ function CheckInner() {
         setReviewCleared(true);
       } else {
         setWords(d.reviews);
-        setQuizMode(d.stats.defaultCheckMode as QuizMode);
+        setQuizMode(isStrict ? "spell" : (d.stats.defaultCheckMode as QuizMode));
         // 选择题干扰项
         const p = await fetch("/api/practice");
         if (p.ok) {
@@ -76,6 +82,8 @@ function CheckInner() {
       const d = await r.json();
       setWords(d.words);
       setDistractors(d.distractors);
+      // 强检查：跳过模式选择，每个词依次做拼写 + 选择
+      if (isStrict) setQuizMode("spell");
     }
     setLoaded(true);
   }, [isReview, router]);
@@ -112,6 +120,7 @@ function CheckInner() {
           // 答错的词可能又到期（10分钟阶梯外的一般不会，但保底重载）
           setWords(d.reviews);
           setIdx(0);
+          if (strict) setQuizMode("spell");
           return;
         }
       }
@@ -121,8 +130,10 @@ function CheckInner() {
       setInput("");
       setSpellState("idle");
       setShowAnswer(false);
+      // 强检查：下一个词从拼写关重新开始
+      if (strict) setQuizMode("spell");
     }
-  }, [idx, words.length, isReview]);
+  }, [idx, words.length, isReview, strict]);
 
   // 拼写提交
   async function submitSpell() {
@@ -133,7 +144,17 @@ function CheckInner() {
       playDing();
       setSpellState("correct");
       await postProgress(word.id, "check-spell", "correct");
-      setTimeout(next, 700);
+      if (strict) {
+        // 强检查：拼写过了还有选择关
+        setTimeout(() => {
+          setQuizMode("choice");
+          setInput("");
+          setSpellState("idle");
+          setShowAnswer(false);
+        }, 700);
+      } else {
+        setTimeout(next, 700);
+      }
     } else {
       playBuzz();
       setSpellState("wrong");
@@ -212,7 +233,7 @@ function CheckInner() {
         <div className="bg-white rounded-2xl shadow-lg p-10 text-center max-w-md">
           <div className="text-5xl mb-4">🎉</div>
           <h2 className="font-bold text-xl mb-6">本轮练习完成！</h2>
-          <Link href="/" className="inline-block bg-[#2d2a32] text-white rounded-xl px-8 py-3 font-bold">
+          <Link href="/" className="inline-block bg-foreground text-white rounded-xl px-8 py-3 font-bold">
             回到首页
           </Link>
         </div>
@@ -231,7 +252,12 @@ function CheckInner() {
   return (
     <div className="max-w-3xl mx-auto p-6 flex flex-col items-center gap-6">
       <div className="w-full flex items-center justify-between text-sm text-black/50">
-        <span>{isReview ? "📅 复习检查" : "💪 自由练习"} · {quizMode === "spell" ? "拼写" : "选择"}</span>
+        <span>
+          {isReview ? "📅 复习检查" : "💪 自由练习"} ·{" "}
+          {strict
+            ? `强检查 ${quizMode === "spell" ? "拼写(1/2)" : "选择(2/2)"}`
+            : quizMode === "spell" ? "拼写" : "选择"}
+        </span>
         <span>{idx + 1} / {words.length}</span>
       </div>
 
@@ -248,7 +274,7 @@ function CheckInner() {
                 <div className="text-black/40">{word.phonetic}</div>
                 <button
                   onClick={next}
-                  className="mt-2 bg-[#2d2a32] text-white rounded-xl px-8 py-2.5 font-bold"
+                  className="mt-2 bg-foreground text-white rounded-xl px-8 py-2.5 font-bold"
                   autoFocus
                 >
                   下一个 →
@@ -273,7 +299,7 @@ function CheckInner() {
                       ? "text-green-500 border-green-400"
                       : spellState === "wrong"
                         ? "text-red-500 border-red-400"
-                        : "border-black/15 focus:border-[#A8D8EA]"
+                        : "border-black/15 focus:border-accent"
                   }`}
                 />
                 {spellState === "wrong" && (
@@ -306,7 +332,7 @@ function CheckInner() {
                     className={`rounded-xl border px-4 py-3 text-lg transition-colors ${
                       isWrong
                         ? "border-red-300 text-red-400 bg-red-50 line-through"
-                        : "border-black/10 hover:border-[#A8D8EA] hover:bg-[#A8D8EA]/20"
+                        : "border-black/10 hover:border-accent hover:bg-accent/20"
                     }`}
                   >
                     {opt}

@@ -18,6 +18,18 @@ export async function isRegistrationOpen(): Promise<boolean> {
   return (await getSetting("registration_open", "true")) === "true";
 }
 
+// 强检查：开启后只有拼写检查和选择检查都答对，单词才算检查通过
+export async function isStrictCheck(): Promise<boolean> {
+  return (await getSetting("strict_check", "false")) === "true";
+}
+
+// ---- 站点信息 ----
+export const DEFAULT_SITE_TITLE = "背单词";
+
+export async function getSiteTitle(): Promise<string> {
+  return (await getSetting("site_title")) || DEFAULT_SITE_TITLE;
+}
+
 // ---- AI 解析配置（Setting 表 > 环境变量 > 默认值）----
 export const DEFAULT_AI_MODEL = "deepseek-v4-flash";
 export const DEFAULT_AI_BASE_URL = "https://api.deepseek.com";
@@ -68,6 +80,40 @@ export async function getAIConfig(): Promise<AIConfig> {
       baseUrl: !!baseUrl,
       apiKey: !!apiKey,
       prompt: !!prompt,
+    },
+  };
+}
+
+// ---- TTS 语音配置（Setting 表 > 环境变量 > 默认值）----
+export const DEFAULT_TTS_MODEL = "mimo-v2.5-tts";
+export const DEFAULT_TTS_BASE_URL = "https://api.xiaomimimo.com/v1";
+export const DEFAULT_TTS_VOICE = "Mia";
+
+export interface TTSConfig {
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  voice: string;
+  overridden: { model: boolean; baseUrl: boolean; apiKey: boolean; voice: boolean };
+}
+
+export async function getTTSConfig(): Promise<TTSConfig> {
+  const [model, baseUrl, apiKey, voice] = await Promise.all([
+    getSetting("tts_model"),
+    getSetting("tts_base_url"),
+    getSetting("tts_api_key"),
+    getSetting("tts_voice"),
+  ]);
+  return {
+    model: model || process.env.MIMO_TTS_MODEL || DEFAULT_TTS_MODEL,
+    baseUrl: baseUrl || process.env.MIMO_BASE_URL || DEFAULT_TTS_BASE_URL,
+    apiKey: apiKey || process.env.MIMO_API_KEY || "",
+    voice: voice || process.env.MIMO_TTS_VOICE || DEFAULT_TTS_VOICE,
+    overridden: {
+      model: !!model,
+      baseUrl: !!baseUrl,
+      apiKey: !!apiKey,
+      voice: !!voice,
     },
   };
 }

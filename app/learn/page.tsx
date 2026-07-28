@@ -128,7 +128,7 @@ export default function LearnPage() {
           <div className="text-5xl mb-4">🎉</div>
           <h2 className="font-bold text-xl mb-2">今日新词全部完成！</h2>
           <p className="text-black/60 mb-6">记得明天回来按记忆曲线复习哦。</p>
-          <Link href="/" className="inline-block bg-[#2d2a32] text-white rounded-xl px-8 py-3 font-bold">
+          <Link href="/" className="inline-block bg-foreground text-white rounded-xl px-8 py-3 font-bold">
             回到首页
           </Link>
         </div>
@@ -151,7 +151,7 @@ export default function LearnPage() {
             type="checkbox"
             checked={extended}
             onChange={(e) => setExtended(e.target.checked)}
-            className="accent-[#2d2a32]"
+            className="accent-foreground"
           />
           扩展模式（抄写例句）
         </label>
@@ -198,7 +198,7 @@ export default function LearnPage() {
               <button
                 onClick={() => playAudio(word.audioEx1)}
                 className={`text-center cursor-pointer rounded-xl p-3 transition-colors ${
-                  phase === "ex1" ? "bg-[#A8D8EA]/30" : "opacity-40 hover:opacity-70"
+                  phase === "ex1" ? "bg-accent/30" : "opacity-40 hover:opacity-70"
                 }`}
               >
                 <div className="text-2xl">{word.example1}</div>

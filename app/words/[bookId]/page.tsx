@@ -74,7 +74,7 @@ export default function BookDetail({ params }: { params: Promise<{ bookId: strin
               key={u.id}
               onClick={() => setActiveUnit(u.id)}
               className={`text-left text-sm rounded-lg px-3 py-2 leading-snug ${
-                u.id === unit?.id ? "bg-[#2d2a32] text-white" : "hover:bg-black/5 text-black/70"
+                u.id === unit?.id ? "bg-foreground text-white" : "hover:bg-black/5 text-black/70"
               }`}
             >
               {u.title}

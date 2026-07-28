@@ -47,6 +47,14 @@ interface AISettings {
   overridden: { model: boolean; baseUrl: boolean; apiKey: boolean; prompt: boolean };
 }
 
+interface TTSSettings {
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  voice: string;
+  overridden: { model: boolean; baseUrl: boolean; apiKey: boolean; voice: boolean };
+}
+
 interface ImportEvent {
   ts: number;
   kind: "word" | "audio" | "info";
@@ -105,6 +113,14 @@ export default function AdminPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [ai, setAi] = useState<AISettings | null>(null);
   const [aiMsg, setAiMsg] = useState("");
+  const [tts, setTts] = useState<TTSSettings | null>(null);
+  const [ttsMsg, setTtsMsg] = useState("");
+  const [strict, setStrict] = useState(false);
+  const [siteTitle, setSiteTitle] = useState("");
+  const [hasIcon, setHasIcon] = useState(false);
+  const [iconVer, setIconVer] = useState(0);
+  const [siteMsg, setSiteMsg] = useState("");
+  const iconInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const [dlBookId, setDlBookId] = useState<string | null>(null);
   const router = useRouter();
@@ -120,7 +136,11 @@ export default function AdminPage() {
       if (r.ok) {
         const d = await r.json();
         setRegOpen(d.registrationOpen);
+        setStrict(!!d.strictCheck);
+        setSiteTitle(d.siteTitle ?? "");
+        setHasIcon(!!d.hasSiteIcon);
         if (d.ai) setAi(d.ai);
+        if (d.tts) setTts(d.tts);
       }
     });
     fetch("/api/admin/books").then(async (r) => {
@@ -172,6 +192,72 @@ export default function AdminPage() {
       setAiMsg(d.error || "保存失败");
     }
     setTimeout(() => setAiMsg(""), 3000);
+  }
+
+  async function saveTTS() {
+    if (!tts) return;
+    setTtsMsg("");
+    const r = await fetch("/api/admin/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ttsModel: tts.model,
+        ttsBaseUrl: tts.baseUrl,
+        ttsApiKey: tts.apiKey,
+        ttsVoice: tts.voice,
+      }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      setTts(d.tts);
+      setTtsMsg("✓ 已保存，立即生效");
+    } else {
+      setTtsMsg(d.error || "保存失败");
+    }
+    setTimeout(() => setTtsMsg(""), 3000);
+  }
+
+  async function toggleStrict() {
+    const nextVal = !strict;
+    setStrict(nextVal);
+    await fetch("/api/admin/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ strictCheck: nextVal }),
+    });
+  }
+
+  async function saveSite() {
+    setSiteMsg("");
+    const r = await fetch("/api/admin/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ siteTitle }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      setSiteTitle(d.siteTitle);
+      setSiteMsg("✓ 已保存");
+    } else {
+      setSiteMsg(d.error || "保存失败");
+    }
+    setTimeout(() => setSiteMsg(""), 3000);
+  }
+
+  async function uploadIcon(file: File) {
+    setSiteMsg("");
+    const form = new FormData();
+    form.append("icon", file);
+    const r = await fetch("/api/admin/site-icon", { method: "POST", body: form });
+    const d = await r.json();
+    if (r.ok) {
+      setHasIcon(true);
+      setIconVer((v) => v + 1);
+      setSiteMsg("✓ 图标已更新");
+    } else {
+      setSiteMsg(d.error || "上传失败");
+    }
+    setTimeout(() => setSiteMsg(""), 3000);
   }
 
   async function downloadBook(b: AdminBook) {
@@ -341,7 +427,7 @@ export default function AdminPage() {
             <input
               value={newUsername}
               onChange={(e) => setNewUsername(e.target.value)}
-              className="mt-1 block border rounded-lg px-3 py-1.5 w-36 outline-none focus:ring-2 ring-[#A8D8EA]"
+              className="mt-1 block border rounded-lg px-3 py-1.5 w-36 outline-none focus:ring-2 ring-accent"
               placeholder="至少2位"
             />
           </label>
@@ -350,7 +436,7 @@ export default function AdminPage() {
             <input
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="mt-1 block border rounded-lg px-3 py-1.5 w-36 outline-none focus:ring-2 ring-[#A8D8EA]"
+              className="mt-1 block border rounded-lg px-3 py-1.5 w-36 outline-none focus:ring-2 ring-accent"
               placeholder="至少4位"
             />
           </label>
@@ -365,7 +451,7 @@ export default function AdminPage() {
               <option value="admin">管理员</option>
             </select>
           </label>
-          <button className="bg-[#2d2a32] text-white rounded-lg px-4 py-1.5 font-bold hover:opacity-90">
+          <button className="bg-foreground text-white rounded-lg px-4 py-1.5 font-bold hover:opacity-90">
             + 创建用户
           </button>
           {createMsg && <span className="text-sm text-green-600">{createMsg}</span>}
@@ -390,7 +476,7 @@ export default function AdminPage() {
                   key={u.id}
                   onClick={() => selectUser(u)}
                   className={`cursor-pointer border-t border-black/5 hover:bg-black/[.02] ${
-                    selected?.id === u.id ? "bg-[#A8D8EA]/20" : ""
+                    selected?.id === u.id ? "bg-accent/20" : ""
                   }`}
                 >
                   <td className="px-4 py-2.5 font-medium">
@@ -399,7 +485,7 @@ export default function AdminPage() {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={`/api/avatars/${u.avatarUrl}`} alt="" className="w-6 h-6 rounded-full object-cover" />
                       ) : (
-                        <span className="w-6 h-6 rounded-full bg-[#A8D8EA] inline-flex items-center justify-center text-xs font-bold">
+                        <span className="w-6 h-6 rounded-full bg-accent text-white inline-flex items-center justify-center text-xs font-bold">
                           {u.username.slice(0, 1).toUpperCase()}
                         </span>
                       )}
@@ -433,7 +519,7 @@ export default function AdminPage() {
                   className="w-12 h-12 rounded-full object-cover"
                 />
               ) : (
-                <span className="w-12 h-12 rounded-full bg-[#A8D8EA] inline-flex items-center justify-center text-lg font-bold">
+                <span className="w-12 h-12 rounded-full bg-accent text-white inline-flex items-center justify-center text-lg font-bold">
                   {selected.username.slice(0, 1).toUpperCase()}
                 </span>
               )}
@@ -469,7 +555,7 @@ export default function AdminPage() {
                   max={200}
                   value={newTarget}
                   onChange={(e) => setNewTarget(Number(e.target.value))}
-                  className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-[#A8D8EA]"
+                  className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
                 />
               </label>
               <label className="text-sm text-black/60">
@@ -480,12 +566,12 @@ export default function AdminPage() {
                   max={500}
                   value={reviewTarget}
                   onChange={(e) => setReviewTarget(Number(e.target.value))}
-                  className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-[#A8D8EA]"
+                  className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
                 />
               </label>
               <button
                 onClick={saveTargets}
-                className="bg-[#2d2a32] text-white rounded-lg py-2 font-bold hover:opacity-90"
+                className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
               >
                 {saved ? "✓ 已保存" : "保存修改"}
               </button>
@@ -498,7 +584,7 @@ export default function AdminPage() {
                     value={resetPwd}
                     onChange={(e) => setResetPwd(e.target.value)}
                     placeholder="新密码（至少4位）"
-                    className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-[#A8D8EA]"
+                    className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
                   />
                 </label>
                 <button
@@ -632,7 +718,7 @@ export default function AdminPage() {
             <button
               onClick={() => assignBooks("assign")}
               disabled={!selBooks.size || (!selUsers.size && !assignAllOpt)}
-              className="bg-[#2d2a32] text-white rounded-lg py-2 font-bold hover:opacity-90 disabled:opacity-40"
+              className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 disabled:opacity-40"
             >
               分配
             </button>
@@ -665,7 +751,7 @@ export default function AdminPage() {
               <span className="w-24 text-black/50">AI 解析</span>
               <div className="flex-1 h-2 bg-black/[.06] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#A8D8EA] transition-all"
+                  className="h-full bg-accent transition-all"
                   style={{ width: `${importStatus.currentBook.analyzeTotal ? (importStatus.currentBook.analyzeDone / importStatus.currentBook.analyzeTotal) * 100 : 0}%` }}
                 />
               </div>
@@ -677,7 +763,7 @@ export default function AdminPage() {
               <span className="w-24 text-black/50">音频生成</span>
               <div className="flex-1 h-2 bg-black/[.06] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#B5EAEA] transition-all"
+                  className="h-full bg-accent-2 transition-all"
                   style={{ width: `${importStatus.currentBook.audioTotal ? (importStatus.currentBook.audioDone / importStatus.currentBook.audioTotal) * 100 : 0}%` }}
                 />
               </div>
@@ -749,7 +835,7 @@ export default function AdminPage() {
                 <input
                   value={ai.model}
                   onChange={(e) => setAi({ ...ai, model: e.target.value })}
-                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-[#A8D8EA] font-mono"
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
                   placeholder="deepseek-v4-flash"
                 />
               </label>
@@ -758,7 +844,7 @@ export default function AdminPage() {
                 <input
                   value={ai.baseUrl}
                   onChange={(e) => setAi({ ...ai, baseUrl: e.target.value })}
-                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-[#A8D8EA] font-mono"
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
                   placeholder="https://api.deepseek.com"
                 />
               </label>
@@ -769,7 +855,7 @@ export default function AdminPage() {
                 type="text"
                 value={ai.apiKey}
                 onChange={(e) => setAi({ ...ai, apiKey: e.target.value })}
-                className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-[#A8D8EA] font-mono"
+                className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
                 placeholder="sk-..."
                 autoComplete="off"
               />
@@ -780,7 +866,7 @@ export default function AdminPage() {
                 value={ai.prompt}
                 onChange={(e) => setAi({ ...ai, prompt: e.target.value })}
                 rows={10}
-                className="mt-1 block border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-[#A8D8EA] font-mono text-xs leading-relaxed"
+                className="mt-1 block border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-accent font-mono text-xs leading-relaxed"
               />
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
@@ -799,7 +885,7 @@ export default function AdminPage() {
             </label>
             <button
               onClick={saveAI}
-              className="bg-[#2d2a32] text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
+              className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
             >
               保存 AI 设置
             </button>
@@ -809,6 +895,142 @@ export default function AdminPage() {
           </div>
         </section>
       )}
+
+      {/* TTS 语音设置 */}
+      {tts && (
+        <section className="bg-white rounded-2xl shadow p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-xl">TTS 语音设置</h2>
+            {ttsMsg && <span className="text-sm text-green-600">{ttsMsg}</span>}
+          </div>
+          <div className="flex flex-col gap-4 max-w-3xl">
+            <div className="flex gap-4 flex-wrap">
+              <label className="text-sm text-black/60 flex-1 min-w-56">
+                模型
+                <input
+                  value={tts.model}
+                  onChange={(e) => setTts({ ...tts, model: e.target.value })}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                  placeholder="mimo-v2.5-tts"
+                />
+              </label>
+              <label className="text-sm text-black/60 flex-1 min-w-56">
+                Base URL
+                <input
+                  value={tts.baseUrl}
+                  onChange={(e) => setTts({ ...tts, baseUrl: e.target.value })}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                  placeholder="https://api.xiaomimimo.com/v1"
+                />
+              </label>
+            </div>
+            <div className="flex gap-4 flex-wrap">
+              <label className="text-sm text-black/60 flex-1 min-w-56">
+                API Key
+                <input
+                  type="text"
+                  value={tts.apiKey}
+                  onChange={(e) => setTts({ ...tts, apiKey: e.target.value })}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className="text-sm text-black/60 flex-1 min-w-56">
+                音色
+                <input
+                  value={tts.voice}
+                  onChange={(e) => setTts({ ...tts, voice: e.target.value })}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                  placeholder="Mia"
+                />
+              </label>
+            </div>
+            <button
+              onClick={saveTTS}
+              className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
+            >
+              保存 TTS 设置
+            </button>
+            <p className="text-xs text-black/40">
+              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值（默认模型 mimo-v2.5-tts，音色 Mia）。
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* 站点设置 */}
+      <section className="bg-white rounded-2xl shadow p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-xl">站点设置</h2>
+          {siteMsg && <span className="text-sm text-green-600">{siteMsg}</span>}
+        </div>
+        <div className="flex flex-col gap-4 max-w-3xl">
+          <div className="flex gap-4 flex-wrap items-end">
+            <label className="text-sm text-black/60 flex-1 min-w-56">
+              网站标题
+              <input
+                value={siteTitle}
+                onChange={(e) => setSiteTitle(e.target.value)}
+                className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
+                placeholder="背单词"
+              />
+            </label>
+            <div className="text-sm text-black/60">
+              网站图标
+              <div className="mt-1 flex items-center gap-3">
+                <button
+                  onClick={() => iconInputRef.current?.click()}
+                  className="w-10 h-10 rounded-lg border-2 border-dashed border-black/20 overflow-hidden flex items-center justify-center hover:border-accent transition-colors"
+                  title="点击上传图标"
+                >
+                  {hasIcon ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`/api/site-icon?v=${iconVer}`} alt="" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-black/30 text-lg">+</span>
+                  )}
+                </button>
+                <span className="text-xs text-black/40">png / ico / svg，不超过 2MB</span>
+                <input
+                  ref={iconInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadIcon(f);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
+            <span className="text-black/60">强检查</span>
+            <button
+              onClick={toggleStrict}
+              className={`w-11 h-6 rounded-full relative transition-colors ${strict ? "bg-green-400" : "bg-black/20"}`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                  strict ? "left-[1.375rem]" : "left-0.5"
+                }`}
+              />
+            </button>
+            <span className="text-xs text-black/40">
+              {strict ? "已开启：拼写检查和选择检查都答对才算检查通过" : "已关闭"}
+            </span>
+          </label>
+          <button
+            onClick={saveSite}
+            className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
+          >
+            保存站点设置
+          </button>
+          <p className="text-xs text-black/40">标题留空并保存可恢复默认「背单词」。图标上传后立即生效。</p>
+        </div>
+      </section>
     </div>
   );
 }

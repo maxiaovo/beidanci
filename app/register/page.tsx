@@ -78,7 +78,7 @@ export default function RegisterPage() {
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="mx-auto w-24 h-24 rounded-full border-2 border-dashed border-black/20 flex items-center justify-center overflow-hidden hover:border-[#A8D8EA] transition-colors"
+          className="mx-auto w-24 h-24 rounded-full border-2 border-dashed border-black/20 flex items-center justify-center overflow-hidden hover:border-accent transition-colors"
         >
           {preview ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -96,14 +96,14 @@ export default function RegisterPage() {
         />
 
         <input
-          className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-[#A8D8EA]"
+          className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-accent"
           placeholder="用户名（至少2位）"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoFocus
         />
         <input
-          className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-[#A8D8EA]"
+          className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-accent"
           type="password"
           placeholder="密码（至少4位）"
           value={password}
@@ -112,7 +112,7 @@ export default function RegisterPage() {
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button
           disabled={loading}
-          className="bg-[#2d2a32] text-white rounded-lg py-2 font-medium hover:opacity-90 disabled:opacity-50"
+          className="bg-foreground text-white rounded-lg py-2 font-medium hover:opacity-90 disabled:opacity-50"
         >
           {loading ? "注册中…" : "注册"}
         </button>

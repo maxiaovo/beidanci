@@ -158,7 +158,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="w-16 h-16 rounded-full border-2 border-dashed border-black/20 overflow-hidden flex items-center justify-center hover:border-[#A8D8EA] transition-colors shrink-0"
+            className="w-16 h-16 rounded-full border-2 border-dashed border-black/20 overflow-hidden flex items-center justify-center hover:border-accent transition-colors shrink-0"
           >
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -187,7 +187,7 @@ export default function SettingsPage() {
             max={200}
             value={newTarget}
             onChange={(e) => setNewTarget(Number(e.target.value))}
-            className="border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-[#A8D8EA]"
+            className="border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-accent"
           />
         </div>
         <div>
@@ -198,7 +198,7 @@ export default function SettingsPage() {
             max={500}
             value={reviewTarget}
             onChange={(e) => setReviewTarget(Number(e.target.value))}
-            className="border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-[#A8D8EA]"
+            className="border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-accent"
           />
         </div>
         <div>
@@ -212,7 +212,7 @@ export default function SettingsPage() {
                 key={o.v}
                 onClick={() => setCheckMode(o.v)}
                 className={`flex-1 rounded-lg py-2 border ${
-                  checkMode === o.v ? "bg-[#2d2a32] text-white border-transparent" : "border-black/15"
+                  checkMode === o.v ? "bg-foreground text-white border-transparent" : "border-black/15"
                 }`}
               >
                 {o.label}
@@ -222,7 +222,7 @@ export default function SettingsPage() {
         </div>
         <button
           onClick={save}
-          className="bg-[#2d2a32] text-white rounded-xl py-2.5 font-bold hover:opacity-90"
+          className="bg-foreground text-white rounded-xl py-2.5 font-bold hover:opacity-90"
         >
           {saved ? "✓ 已保存" : "保存"}
         </button>

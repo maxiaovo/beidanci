@@ -1,6 +1,8 @@
 // MiMo V2.5 TTS：非流式调用，返回 wav 并保存到 data/audio/
+// 模型/Key/音色优先取管理员在 Setting 表中的配置，回落到环境变量 / 默认值
 import fs from "fs";
 import path from "path";
+import { getTTSConfig } from "./settings";
 
 export const AUDIO_DIR = path.join(process.cwd(), "data", "audio");
 
@@ -11,21 +13,22 @@ function ensureDir() {
 export async function synthesize(text: string, fileName: string): Promise<string | null> {
   if (!text.trim()) return null;
   ensureDir();
-  const url = `${process.env.MIMO_BASE_URL || "https://api.xiaomimimo.com/v1"}/chat/completions`;
+  const cfg = await getTTSConfig();
+  const url = `${cfg.baseUrl}/chat/completions`;
   const body = {
-    model: process.env.MIMO_TTS_MODEL || "mimo-v2.5-tts",
+    model: cfg.model,
     messages: [
       { role: "user", content: "Read the following English text clearly and naturally, at a moderate pace, for a language learner." },
       { role: "assistant", content: text },
     ],
-    audio: { format: "wav", voice: process.env.MIMO_TTS_VOICE || "Mia" },
+    audio: { format: "wav", voice: cfg.voice },
   };
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.MIMO_API_KEY}`,
+        Authorization: `Bearer ${cfg.apiKey}`,
       },
       body: JSON.stringify(body),
     });

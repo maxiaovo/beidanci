@@ -139,7 +139,7 @@ export default function Dashboard() {
                   <div className="mt-auto">
                     <div className="h-2 rounded-full bg-white/60 overflow-hidden">
                       <div
-                        className="h-full bg-[#2d2a32]/70 rounded-full"
+                        className="h-full bg-foreground/70 rounded-full"
                         style={{ width: b.total ? `${(b.learned / b.total) * 100}%` : "0%" }}
                       />
                     </div>

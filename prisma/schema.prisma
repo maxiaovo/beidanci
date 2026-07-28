@@ -100,6 +100,8 @@ model WordProgress {
   stage        Int       @default(0)
   nextReviewAt DateTime
   lastResult   String    @default("") // correct | wrong | giveup
+  spellPassed  Boolean   @default(false) // 强检查：本轮拼写检查已通过
+  choicePassed Boolean   @default(false) // 强检查：本轮选择检查已通过
   reps         Int       @default(0)
   lapses       Int       @default(0)
   updatedAt    DateTime  @updatedAt

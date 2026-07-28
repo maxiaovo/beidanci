@@ -222,7 +222,7 @@ export default function ImportPage() {
             multiple
             accept=".docx,.xlsx,.xls,.txt,.csv"
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-            className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-[#A8D8EA] file:px-4 file:py-2 file:font-medium hover:file:opacity-80"
+            className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium hover:file:opacity-80"
           />
           {files.length > 0 && (
             <p className="text-xs text-black/40 mt-1">已选 {files.length} 个文件，将按顺序逐个导入</p>
@@ -235,7 +235,7 @@ export default function ImportPage() {
               value={bookName}
               onChange={(e) => setBookName(e.target.value)}
               placeholder="如：Y6衔接班·科学"
-              className="border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-[#A8D8EA]"
+              className="border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-accent"
             />
           </div>
         )}
@@ -274,7 +274,7 @@ export default function ImportPage() {
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button
           disabled={!files.length}
-          className="bg-[#2d2a32] text-white rounded-xl py-2.5 font-bold hover:opacity-90 disabled:opacity-40"
+          className="bg-foreground text-white rounded-xl py-2.5 font-bold hover:opacity-90 disabled:opacity-40"
         >
           开始导入{files.length > 1 ? `（${files.length} 本）` : ""}
         </button>
