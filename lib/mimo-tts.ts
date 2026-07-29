@@ -1,27 +1,23 @@
-// MiMo V2.5 TTS：非流式调用，返回 wav 并保存到 data/audio/
-// 模型/Key/音色优先取管理员在 Setting 表中的配置，回落到环境变量 / 默认值
-import fs from "fs";
-import path from "path";
-import { getTTSConfig } from "./settings";
+// MiMo V2.5 TTS：非流式调用，返回 wav 字节（由 lib/tts.ts 统一落盘）
+import type { TTSConfig } from "./settings";
 
-export const AUDIO_DIR = path.join(process.cwd(), "data", "audio");
-
-function ensureDir() {
-  fs.mkdirSync(AUDIO_DIR, { recursive: true });
-}
-
-export async function synthesize(text: string, fileName: string): Promise<string | null> {
-  if (!text.trim()) return null;
-  ensureDir();
-  const cfg = await getTTSConfig();
+export async function synthesizeMimo(
+  cfg: TTSConfig,
+  text: string,
+  opts?: { phonetic?: string },
+): Promise<Buffer | null> {
   const url = `${cfg.baseUrl}/chat/completions`;
+  // 有音标时附在发音指令里，让模型按 IPA 发音，避免专有名词/多音词读错
+  const instruction = opts?.phonetic
+    ? `${cfg.prompt}\nThe correct pronunciation is ${opts.phonetic} — pronounce it exactly according to this IPA transcription.`
+    : cfg.prompt;
   const body = {
     model: cfg.model,
     messages: [
-      { role: "user", content: "Read the following English text clearly and naturally, at a moderate pace, for a language learner." },
+      { role: "user", content: instruction },
       { role: "assistant", content: text },
     ],
-    audio: { format: "wav", voice: cfg.voice },
+    audio: { format: cfg.format, voice: cfg.voice },
   };
   try {
     const res = await fetch(url, {
@@ -42,8 +38,7 @@ export async function synthesize(text: string, fileName: string): Promise<string
       console.error("TTS 返回无音频数据", JSON.stringify(data).slice(0, 300));
       return null;
     }
-    fs.writeFileSync(path.join(AUDIO_DIR, fileName), Buffer.from(b64, "base64"));
-    return fileName;
+    return Buffer.from(b64, "base64");
   } catch (e) {
     console.error("TTS 调用失败:", e);
     return null;

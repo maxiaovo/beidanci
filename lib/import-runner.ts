@@ -2,7 +2,7 @@
 // 全局串行队列：同一时间只处理一本书，其余排队等待
 import { prisma } from "./db";
 import { analyzeUnitText } from "./deepseek";
-import { synthesize } from "./mimo-tts";
+import { synthesize } from "./tts";
 import type { RawUnit } from "./parsers";
 
 interface Job {
@@ -154,7 +154,7 @@ async function runImport(bookId: string, units: RawUnit[]) {
     logImportEvent({ kind: "info", bookId, text: `开始生成音频，共 ${allWords.length * 3} 条` });
     for (const w of allWords) {
       if (isStopped(bookId)) throw new Stopped();
-      const audioWord = await synthesize(w.text, `${w.id}_word.wav`);
+      const audioWord = await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic });
       logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音`, ok: !!audioWord });
       done++;
       if (isStopped(bookId)) throw new Stopped();
@@ -200,7 +200,7 @@ export async function backfillAudio(bookId: string) {
   });
   for (const w of words) {
     if (isStopped(bookId)) break;
-    const audioWord = w.audioWord ?? (await synthesize(w.text, `${w.id}_word.wav`));
+    const audioWord = w.audioWord ?? (await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic }));
     const audioEx1 = w.audioEx1 ?? (await synthesize(w.example1, `${w.id}_ex1.wav`));
     const audioEx2 = w.audioEx2 ?? (await synthesize(w.example2, `${w.id}_ex2.wav`));
     await prisma.word.update({ where: { id: w.id }, data: { audioWord, audioEx1, audioEx2 } });

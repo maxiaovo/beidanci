@@ -85,35 +85,88 @@ export async function getAIConfig(): Promise<AIConfig> {
 }
 
 // ---- TTS 语音配置（Setting 表 > 环境变量 > 默认值）----
+export const DEFAULT_TTS_PROVIDER = "mimo"; // mimo | qwen
 export const DEFAULT_TTS_MODEL = "mimo-v2.5-tts";
 export const DEFAULT_TTS_BASE_URL = "https://api.xiaomimimo.com/v1";
 export const DEFAULT_TTS_VOICE = "Mia";
+export const DEFAULT_TTS_FORMAT = "wav";
+// 发音指令：放在 user 消息中控制合成风格（目标文本在 assistant 消息，见 MiMo TTS 文档）
+export const DEFAULT_TTS_PROMPT =
+  "Read the following English text clearly and naturally, at a moderate pace, for a language learner.";
+// Qwen3-TTS 本地服务默认值
+export const DEFAULT_QWEN_BASE_URL = "http://localhost:8765";
+export const DEFAULT_QWEN_MODE = "clone"; // clone | custom | design
+export const DEFAULT_QWEN_VOICE = "matthew-full";
+export const DEFAULT_QWEN_LANGUAGE = "English";
 
 export interface TTSConfig {
+  provider: string; // mimo | qwen
   model: string;
   baseUrl: string;
-  apiKey: string;
+  apiKey: string; // mimo: API Key；qwen: TTS_API_TOKEN（未启用鉴权可留空）
   voice: string;
-  overridden: { model: boolean; baseUrl: boolean; apiKey: boolean; voice: boolean };
+  format: string;
+  prompt: string;
+  qwenMode: string;
+  qwenVoice: string; // clone: 音色名；custom: 预设说话人
+  qwenInstruct: string; // clone: 情绪注入（可空）；design: 音色描述（必填）
+  qwenLanguage: string;
+  qwenTemperature: string;
+  qwenMaxTokens: string;
+  overridden: Record<string, boolean>;
 }
 
 export async function getTTSConfig(): Promise<TTSConfig> {
-  const [model, baseUrl, apiKey, voice] = await Promise.all([
-    getSetting("tts_model"),
-    getSetting("tts_base_url"),
-    getSetting("tts_api_key"),
-    getSetting("tts_voice"),
-  ]);
+  const keys = [
+    "tts_provider",
+    "tts_model",
+    "tts_base_url",
+    "tts_api_key",
+    "tts_voice",
+    "tts_format",
+    "tts_prompt",
+    "tts_qwen_mode",
+    "tts_qwen_voice",
+    "tts_qwen_instruct",
+    "tts_qwen_language",
+    "tts_qwen_temperature",
+    "tts_qwen_max_tokens",
+  ];
+  const rows = await prisma.setting.findMany({ where: { key: { in: keys } } });
+  const s = Object.fromEntries(rows.map((r) => [r.key, r.value as string]));
+  const provider = s.tts_provider || process.env.TTS_PROVIDER || DEFAULT_TTS_PROVIDER;
   return {
-    model: model || process.env.MIMO_TTS_MODEL || DEFAULT_TTS_MODEL,
-    baseUrl: baseUrl || process.env.MIMO_BASE_URL || DEFAULT_TTS_BASE_URL,
-    apiKey: apiKey || process.env.MIMO_API_KEY || "",
-    voice: voice || process.env.MIMO_TTS_VOICE || DEFAULT_TTS_VOICE,
+    provider,
+    model: s.tts_model || process.env.MIMO_TTS_MODEL || DEFAULT_TTS_MODEL,
+    baseUrl:
+      s.tts_base_url ||
+      (provider === "qwen"
+        ? process.env.QWEN_BASE_URL || DEFAULT_QWEN_BASE_URL
+        : process.env.MIMO_BASE_URL || DEFAULT_TTS_BASE_URL),
+    apiKey: s.tts_api_key || process.env.MIMO_API_KEY || "",
+    voice: s.tts_voice || process.env.MIMO_TTS_VOICE || DEFAULT_TTS_VOICE,
+    format: s.tts_format || process.env.MIMO_TTS_FORMAT || DEFAULT_TTS_FORMAT,
+    prompt: s.tts_prompt || process.env.MIMO_TTS_PROMPT || DEFAULT_TTS_PROMPT,
+    qwenMode: s.tts_qwen_mode || process.env.QWEN_TTS_MODE || DEFAULT_QWEN_MODE,
+    qwenVoice: s.tts_qwen_voice || process.env.QWEN_TTS_VOICE || DEFAULT_QWEN_VOICE,
+    qwenInstruct: s.tts_qwen_instruct || process.env.QWEN_TTS_INSTRUCT || "",
+    qwenLanguage: s.tts_qwen_language || process.env.QWEN_TTS_LANGUAGE || DEFAULT_QWEN_LANGUAGE,
+    qwenTemperature: s.tts_qwen_temperature || process.env.QWEN_TTS_TEMPERATURE || "0",
+    qwenMaxTokens: s.tts_qwen_max_tokens || process.env.QWEN_TTS_MAX_TOKENS || "2048",
     overridden: {
-      model: !!model,
-      baseUrl: !!baseUrl,
-      apiKey: !!apiKey,
-      voice: !!voice,
+      provider: !!s.tts_provider,
+      model: !!s.tts_model,
+      baseUrl: !!s.tts_base_url,
+      apiKey: !!s.tts_api_key,
+      voice: !!s.tts_voice,
+      format: !!s.tts_format,
+      prompt: !!s.tts_prompt,
+      qwenMode: !!s.tts_qwen_mode,
+      qwenVoice: !!s.tts_qwen_voice,
+      qwenInstruct: !!s.tts_qwen_instruct,
+      qwenLanguage: !!s.tts_qwen_language,
+      qwenTemperature: !!s.tts_qwen_temperature,
+      qwenMaxTokens: !!s.tts_qwen_max_tokens,
     },
   };
 }

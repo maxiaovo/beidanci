@@ -48,11 +48,34 @@ interface AISettings {
 }
 
 interface TTSSettings {
+  provider: string; // mimo | qwen
   model: string;
   baseUrl: string;
   apiKey: string;
   voice: string;
-  overridden: { model: boolean; baseUrl: boolean; apiKey: boolean; voice: boolean };
+  format: string;
+  prompt: string;
+  qwenMode: string;
+  qwenVoice: string;
+  qwenInstruct: string;
+  qwenLanguage: string;
+  qwenTemperature: string;
+  qwenMaxTokens: string;
+  overridden: Record<string, boolean>;
+}
+
+interface AudioWord {
+  id: string;
+  text: string;
+  phonetic: string;
+  book: string;
+  unit: string;
+  audioWord: string | null;
+  audioEx1: string | null;
+  audioEx2: string | null;
+  fileWord: boolean;
+  fileEx1: boolean;
+  fileEx2: boolean;
 }
 
 interface ImportEvent {
@@ -115,6 +138,9 @@ export default function AdminPage() {
   const [aiMsg, setAiMsg] = useState("");
   const [tts, setTts] = useState<TTSSettings | null>(null);
   const [ttsMsg, setTtsMsg] = useState("");
+  const [audioWords, setAudioWords] = useState<AudioWord[] | null>(null);
+  const [audioFilter, setAudioFilter] = useState("");
+  const [regenBusy, setRegenBusy] = useState<Record<string, boolean>>({});
   const [strict, setStrict] = useState(false);
   const [siteTitle, setSiteTitle] = useState("");
   const [hasIcon, setHasIcon] = useState(false);
@@ -147,6 +173,12 @@ export default function AdminPage() {
       if (r.ok) {
         const d = await r.json();
         setBooks(d.books);
+      }
+    });
+    fetch("/api/admin/audio").then(async (r) => {
+      if (r.ok) {
+        const d = await r.json();
+        setAudioWords(d.words);
       }
     });
   }, [router]);
@@ -201,10 +233,19 @@ export default function AdminPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        ttsProvider: tts.provider,
         ttsModel: tts.model,
         ttsBaseUrl: tts.baseUrl,
         ttsApiKey: tts.apiKey,
         ttsVoice: tts.voice,
+        ttsFormat: tts.format,
+        ttsPrompt: tts.prompt,
+        ttsQwenMode: tts.qwenMode,
+        ttsQwenVoice: tts.qwenVoice,
+        ttsQwenInstruct: tts.qwenInstruct,
+        ttsQwenLanguage: tts.qwenLanguage,
+        ttsQwenTemperature: tts.qwenTemperature,
+        ttsQwenMaxTokens: tts.qwenMaxTokens,
       }),
     });
     const d = await r.json();
@@ -215,6 +256,47 @@ export default function AdminPage() {
       setTtsMsg(d.error || "保存失败");
     }
     setTimeout(() => setTtsMsg(""), 3000);
+  }
+
+  // 播放音频（加时间戳避免重新生成后命中浏览器缓存）
+  function playAudio(name: string) {
+    new Audio(`/api/audio/${name}?v=${Date.now()}`).play().catch(() => {});
+  }
+
+  // 重新生成某个单词的某条音频，成功后更新列表中的该行
+  async function regenAudio(w: AudioWord, kind: "word" | "ex1" | "ex2") {
+    const key = `${w.id}_${kind}`;
+    setRegenBusy((s) => ({ ...s, [key]: true }));
+    try {
+      const r = await fetch("/api/admin/audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wordId: w.id, kind }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setAudioWords((list) =>
+          (list ?? []).map((x) =>
+            x.id === w.id
+              ? {
+                  ...x,
+                  audioWord: d.audioWord,
+                  audioEx1: d.audioEx1,
+                  audioEx2: d.audioEx2,
+                  fileWord: d.fileWord,
+                  fileEx1: d.fileEx1,
+                  fileEx2: d.fileEx2,
+                }
+              : x,
+          ),
+        );
+        if (!d.ok) alert(`${w.text} 部分音频生成失败：${(d.failed || []).join(", ")}`);
+      } else {
+        alert(d.error || "重新生成失败");
+      }
+    } finally {
+      setRegenBusy((s) => ({ ...s, [key]: false }));
+    }
   }
 
   async function toggleStrict() {
@@ -906,13 +988,15 @@ export default function AdminPage() {
           <div className="flex flex-col gap-4 max-w-3xl">
             <div className="flex gap-4 flex-wrap">
               <label className="text-sm text-black/60 flex-1 min-w-56">
-                模型
-                <input
-                  value={tts.model}
-                  onChange={(e) => setTts({ ...tts, model: e.target.value })}
-                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="mimo-v2.5-tts"
-                />
+                引擎（provider）
+                <select
+                  value={tts.provider}
+                  onChange={(e) => setTts({ ...tts, provider: e.target.value })}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono bg-white"
+                >
+                  <option value="mimo">mimo（小米 MiMo 云端）</option>
+                  <option value="qwen">qwen（本地 Qwen3-TTS）</option>
+                </select>
               </label>
               <label className="text-sm text-black/60 flex-1 min-w-56">
                 Base URL
@@ -920,32 +1004,129 @@ export default function AdminPage() {
                   value={tts.baseUrl}
                   onChange={(e) => setTts({ ...tts, baseUrl: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="https://api.xiaomimimo.com/v1"
+                  placeholder={tts.provider === "qwen" ? "http://localhost:8765" : "https://api.xiaomimimo.com/v1"}
                 />
               </label>
-            </div>
-            <div className="flex gap-4 flex-wrap">
               <label className="text-sm text-black/60 flex-1 min-w-56">
-                API Key
+                {tts.provider === "qwen" ? "Token（TTS_API_TOKEN，未启用可留空）" : "API Key"}
                 <input
                   type="text"
                   value={tts.apiKey}
                   onChange={(e) => setTts({ ...tts, apiKey: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="sk-..."
+                  placeholder={tts.provider === "qwen" ? "可留空" : "sk-..."}
                   autoComplete="off"
                 />
               </label>
-              <label className="text-sm text-black/60 flex-1 min-w-56">
-                音色
-                <input
-                  value={tts.voice}
-                  onChange={(e) => setTts({ ...tts, voice: e.target.value })}
-                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="Mia"
-                />
-              </label>
             </div>
+            {tts.provider === "qwen" ? (
+              <>
+                <div className="flex gap-4 flex-wrap">
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    模式（mode）
+                    <select
+                      value={tts.qwenMode}
+                      onChange={(e) => setTts({ ...tts, qwenMode: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono bg-white"
+                    >
+                      <option value="clone">clone（克隆音色）</option>
+                      <option value="custom">custom（预设说话人）</option>
+                      <option value="design">design（文字描述音色）</option>
+                    </select>
+                  </label>
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    {tts.qwenMode === "custom" ? "预设说话人（speaker）" : "克隆音色（voice）"}
+                    <input
+                      value={tts.qwenVoice}
+                      onChange={(e) => setTts({ ...tts, qwenVoice: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                      placeholder="matthew-full"
+                    />
+                  </label>
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    语言（language）
+                    <input
+                      value={tts.qwenLanguage}
+                      onChange={(e) => setTts({ ...tts, qwenLanguage: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                      placeholder="English"
+                    />
+                  </label>
+                </div>
+                <div className="flex gap-4 flex-wrap">
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    温度（temperature，0=最稳定）
+                    <input
+                      value={tts.qwenTemperature}
+                      onChange={(e) => setTts({ ...tts, qwenTemperature: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                      placeholder="0"
+                    />
+                  </label>
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    最大 token（max_tokens）
+                    <input
+                      value={tts.qwenMaxTokens}
+                      onChange={(e) => setTts({ ...tts, qwenMaxTokens: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                      placeholder="2048"
+                    />
+                  </label>
+                </div>
+                <label className="text-sm text-black/60">
+                  instruct（clone：情绪注入，可留空；design：音色描述，必填）
+                  <textarea
+                    value={tts.qwenInstruct}
+                    onChange={(e) => setTts({ ...tts, qwenInstruct: e.target.value })}
+                    rows={2}
+                    className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono text-xs"
+                    placeholder="留空 = 自然朗读"
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <div className="flex gap-4 flex-wrap">
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    模型
+                    <input
+                      value={tts.model}
+                      onChange={(e) => setTts({ ...tts, model: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                      placeholder="mimo-v2.5-tts"
+                    />
+                  </label>
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    音色
+                    <input
+                      value={tts.voice}
+                      onChange={(e) => setTts({ ...tts, voice: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                      placeholder="Mia"
+                    />
+                  </label>
+                  <label className="text-sm text-black/60 flex-1 min-w-56">
+                    音频格式
+                    <input
+                      value={tts.format}
+                      onChange={(e) => setTts({ ...tts, format: e.target.value })}
+                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                      placeholder="wav"
+                    />
+                  </label>
+                </div>
+                <label className="text-sm text-black/60">
+                  发音指令（user 消息，控制语气/语速/发音风格；单词音频会在此指令后自动附带音标）
+                  <textarea
+                    value={tts.prompt}
+                    onChange={(e) => setTts({ ...tts, prompt: e.target.value })}
+                    rows={3}
+                    className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono text-xs"
+                    placeholder="Read the following English text clearly and naturally, at a moderate pace, for a language learner."
+                  />
+                </label>
+              </>
+            )}
             <button
               onClick={saveTTS}
               className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
@@ -953,11 +1134,95 @@ export default function AdminPage() {
               保存 TTS 设置
             </button>
             <p className="text-xs text-black/40">
-              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值（默认模型 mimo-v2.5-tts，音色 Mia）。
+              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。qwen 引擎指向本地 Qwen3-TTS 服务（默认 http://localhost:8765），服务器需能访问该地址才能在线生成。
             </p>
           </div>
         </section>
       )}
+
+      {/* 音频资源检查 */}
+      <section className="bg-white rounded-2xl shadow p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <h2 className="font-bold text-xl">音频资源</h2>
+          <input
+            value={audioFilter}
+            onChange={(e) => setAudioFilter(e.target.value)}
+            placeholder="筛选单词 / 音标 / 词书 / 单元"
+            className="border rounded-lg px-3 py-1.5 text-sm w-72 outline-none focus:ring-2 ring-accent"
+          />
+        </div>
+        {!audioWords ? (
+          <p className="text-sm text-black/40">加载中…</p>
+        ) : (
+          <>
+            <p className="text-xs text-black/40 mb-2">
+              共 {audioWords.length} 个单词
+              {audioWords.filter((w) => !w.fileWord || !w.fileEx1 || !w.fileEx2).length > 0 &&
+                `，${audioWords.filter((w) => !w.fileWord || !w.fileEx1 || !w.fileEx2).length} 个存在缺失音频`}
+              ，点击 ▶ 试听，↻ 重新生成（按当前 TTS 设置与音标）
+            </p>
+            <div className="divide-y max-h-[32rem] overflow-y-auto">
+              {audioWords
+                .filter((w) => {
+                  const q = audioFilter.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    w.text.toLowerCase().includes(q) ||
+                    w.phonetic.toLowerCase().includes(q) ||
+                    w.book.toLowerCase().includes(q) ||
+                    w.unit.toLowerCase().includes(q)
+                  );
+                })
+                .slice(0, 300)
+                .map((w) => (
+                  <div key={w.id} className="flex items-center gap-3 py-1.5 text-sm">
+                    <div className="w-52 shrink-0">
+                      <span className="font-bold">{w.text}</span>
+                      <span className="ml-2 text-xs text-black/40">{w.phonetic}</span>
+                    </div>
+                    <div className="flex-1 text-xs text-black/40 truncate">
+                      {w.book} · {w.unit}
+                    </div>
+                    {(
+                      [
+                        ["word", "单词", w.audioWord, w.fileWord],
+                        ["ex1", "例句1", w.audioEx1, w.fileEx1],
+                        ["ex2", "例句2", w.audioEx2, w.fileEx2],
+                      ] as const
+                    ).map(([kind, label, file, ok]) => (
+                      <div key={kind} className="flex items-center gap-0.5">
+                        <button
+                          disabled={!file || !ok}
+                          onClick={() => file && playAudio(file)}
+                          title={file ? (ok ? file : `${file}（文件缺失）`) : "未生成"}
+                          className={`px-2 py-1 rounded text-xs ${
+                            file && ok
+                              ? "bg-black/5 hover:bg-black/10"
+                              : "bg-black/5 text-red-500 opacity-60 cursor-not-allowed"
+                          }`}
+                        >
+                          ▶ {label}
+                          {file && !ok ? "（缺失）" : !file ? "（无）" : ""}
+                        </button>
+                        <button
+                          onClick={() => regenAudio(w, kind)}
+                          disabled={regenBusy[`${w.id}_${kind}`]}
+                          title={`重新生成${label}音频`}
+                          className="px-1.5 py-1 rounded text-xs hover:bg-black/10 disabled:opacity-40"
+                        >
+                          {regenBusy[`${w.id}_${kind}`] ? "…" : "↻"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+            </div>
+            {audioFilter.trim() === "" && audioWords.length > 300 && (
+              <p className="text-xs text-black/40 mt-2">仅显示前 300 条，请用筛选缩小范围</p>
+            )}
+          </>
+        )}
+      </section>
 
       {/* 站点设置 */}
       <section className="bg-white rounded-2xl shadow p-5">

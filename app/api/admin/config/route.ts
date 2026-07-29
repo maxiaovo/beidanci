@@ -24,13 +24,7 @@ export async function GET() {
       thinking: ai.thinking,
       overridden: ai.overridden,
     },
-    tts: {
-      model: tts.model,
-      baseUrl: tts.baseUrl,
-      apiKey: tts.apiKey,
-      voice: tts.voice,
-      overridden: tts.overridden,
-    },
+    tts: { ...tts },
   });
 }
 
@@ -58,10 +52,19 @@ export async function PATCH(req: Request) {
     aiBaseUrl: "ai_base_url",
     aiApiKey: "ai_api_key",
     aiPrompt: "ai_prompt",
+    ttsProvider: "tts_provider",
     ttsModel: "tts_model",
     ttsBaseUrl: "tts_base_url",
     ttsApiKey: "tts_api_key",
     ttsVoice: "tts_voice",
+    ttsFormat: "tts_format",
+    ttsPrompt: "tts_prompt",
+    ttsQwenMode: "tts_qwen_mode",
+    ttsQwenVoice: "tts_qwen_voice",
+    ttsQwenInstruct: "tts_qwen_instruct",
+    ttsQwenLanguage: "tts_qwen_language",
+    ttsQwenTemperature: "tts_qwen_temperature",
+    ttsQwenMaxTokens: "tts_qwen_max_tokens",
   };
   for (const [bodyKey, settingKey] of Object.entries(strFields)) {
     if (typeof body[bodyKey] === "string") {
@@ -87,12 +90,6 @@ export async function PATCH(req: Request) {
       thinking: ai.thinking,
       overridden: ai.overridden,
     },
-    tts: {
-      model: tts.model,
-      baseUrl: tts.baseUrl,
-      apiKey: tts.apiKey,
-      voice: tts.voice,
-      overridden: tts.overridden,
-    },
+    tts: { ...tts },
   });
 }

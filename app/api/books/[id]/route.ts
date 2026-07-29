@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { bookVisibleWhere } from "@/lib/book-access";
 import { requestStop } from "@/lib/import-runner";
-import { AUDIO_DIR } from "@/lib/mimo-tts";
+import { AUDIO_DIR } from "@/lib/tts";
 
 // 单词列表浏览：书 → 单元 → 单词
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {

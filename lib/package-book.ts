@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
 import { prisma } from "./db";
-import { AUDIO_DIR } from "./mimo-tts";
+import { AUDIO_DIR } from "./tts";
 
 export const PACKAGE_DIR = path.join(process.cwd(), "data", "packages");
 

@@ -44,5 +44,6 @@ next-env.d.ts
 prisma/dev.db
 prisma/dev.db-journal
 data/audio/
+data/audio-qwen/
 data/avatars/
 data/packages/

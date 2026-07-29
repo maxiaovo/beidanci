@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { AUDIO_DIR } from "@/lib/mimo-tts";
+import { AUDIO_DIR } from "@/lib/tts";
 import { getSessionUser } from "@/lib/session";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ name: string }> }) {

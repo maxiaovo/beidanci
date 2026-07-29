@@ -30,12 +30,15 @@ export interface StudyWord {
 // 马卡龙配色
 export const MACARON = ["#A8D8EA", "#FFB7B2", "#FFDAC1", "#E2F0CB", "#C7CEEA", "#FFD6E0"];
 
+// 音频内容整体替换时递增此版本号，强制所有浏览器重新拉取（文件名不变，否则命中 24h 缓存）
+const AUDIO_VERSION = 2;
+
 let currentAudio: HTMLAudioElement | null = null;
 
 export function playAudio(fileName: string | null | undefined) {
   if (!fileName) return;
   currentAudio?.pause();
-  currentAudio = new Audio(`/api/audio/${fileName}`);
+  currentAudio = new Audio(`/api/audio/${fileName}?v=${AUDIO_VERSION}`);
   currentAudio.play().catch(() => {});
 }
 
