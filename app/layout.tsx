@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
@@ -19,6 +19,13 @@ const geistMono = Geist({
 
 // 站点标题/图标可被管理员修改，需实时读取
 export const dynamic = "force-dynamic";
+
+// viewportFit=cover：配合底部 Tab 栏的 env(safe-area-inset-bottom) 适配刘海屏
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export async function generateMetadata(): Promise<Metadata> {
   const title = await getSiteTitle();
@@ -46,7 +53,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <Nav />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-0">{children}</main>
       </body>
     </html>
   );

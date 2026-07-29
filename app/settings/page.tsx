@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   applyThemeVars,
   DEFAULT_THEME,
@@ -194,6 +195,11 @@ export default function SettingsPage() {
     router.refresh();
   }
 
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+  }
+
   return (
     <div className="max-w-md mx-auto p-6">
       <h1 className="font-bold text-2xl mb-6">设置</h1>
@@ -359,6 +365,24 @@ export default function SettingsPage() {
           )}
         </div>
       )}
+
+      {/* 快捷入口（手机端底部 Tab 栏收起了这些页面） */}
+      <div className="bg-white rounded-2xl shadow p-6 flex flex-col gap-1 mt-6 sm:hidden">
+        <Link href="/import" className="py-2.5 flex items-center justify-between text-sm hover:opacity-70">
+          📥 导入单词书 <span className="text-black/30">›</span>
+        </Link>
+        {isAdmin && (
+          <Link href="/admin" className="py-2.5 flex items-center justify-between text-sm border-t border-black/5 hover:opacity-70">
+            🛠 后台管理 <span className="text-black/30">›</span>
+          </Link>
+        )}
+        <button
+          onClick={logout}
+          className="py-2.5 flex items-center justify-between text-sm text-red-500 border-t border-black/5"
+        >
+          退出登录 <span className="text-black/30">›</span>
+        </button>
+      </div>
     </div>
   );
 }

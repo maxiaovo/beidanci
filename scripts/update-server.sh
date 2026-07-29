@@ -40,4 +40,8 @@ npm run build || fail "构建失败"
 
 write_status restarting "正在重启服务…"
 sleep 2
-sudo -n systemctl restart ledouniu-mx.service || fail "重启服务失败"
+# 服务单元设有 NoNewPrivileges=true，进程内无法 sudo；改为 SIGKILL 主进程，
+# systemd（Restart=on-failure，SIGKILL 属异常退出）会自动用新代码重启整个服务
+MAINPID=$(systemctl show -p MainPID --value ledouniu-mx.service)
+[ -n "$MAINPID" ] && [ "$MAINPID" != "0" ] || fail "无法获取服务主进程 PID"
+kill -9 "$MAINPID" || fail "重启服务失败"

@@ -147,7 +147,7 @@ export default function WordsIndex() {
                 className="rounded-2xl p-5 shadow hover:shadow-md transition-shadow relative"
                 style={{ background: COVERS[i % COVERS.length] }}
               >
-                <Link href={`/words/${b.id}`} className="block">
+                <Link href={`/words/${b.id}`} className="block pr-12">
                   <div className="font-bold text-lg leading-snug">{b.name}</div>
                   <div className="text-sm text-black/50 mt-1">{b.units} 个单元 · {b.total} 词</div>
                   <div className="text-xs text-black/50 mt-3">已学 {b.learned} · 掌握 {b.mastered}</div>

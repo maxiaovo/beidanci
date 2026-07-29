@@ -64,16 +64,16 @@ export default function BookDetail({ params }: { params: Promise<{ bookId: strin
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6 flex gap-6">
-      {/* 单元侧栏 */}
-      <aside className="w-56 shrink-0">
+    <div className="max-w-5xl mx-auto p-4 sm:p-6 flex flex-col md:flex-row gap-4 md:gap-6">
+      {/* 单元侧栏（手机端为顶部横向滚动条） */}
+      <aside className="md:w-56 shrink-0">
         <h1 className="font-bold text-lg mb-3 leading-snug">{book.name}</h1>
-        <div className="flex flex-col gap-1 max-h-[70vh] overflow-y-auto pr-1">
+        <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-x-visible md:max-h-[70vh] md:overflow-y-auto md:pr-1 pb-1 md:pb-0">
           {units.map((u) => (
             <button
               key={u.id}
               onClick={() => setActiveUnit(u.id)}
-              className={`text-left text-sm rounded-lg px-3 py-2 leading-snug ${
+              className={`text-left text-sm rounded-lg px-3 py-2 leading-snug shrink-0 md:shrink ${
                 u.id === unit?.id ? "bg-foreground text-white" : "hover:bg-black/5 text-black/70"
               }`}
             >
