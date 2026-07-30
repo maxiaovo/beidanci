@@ -4,10 +4,10 @@
 
 ## TTS 语音合成（Qwen3-TTS 本地服务）
 
-TTS 引擎可在管理页切换（`provider`）：`qwen`（本地 Qwen3-TTS，默认）或 `mimo`（小米云端，备选）。
+TTS 只接本地 Qwen3-TTS 服务，无云端备选引擎。
 
 - 本地 Qwen3-TTS 服务跑在开发者 Mac（`http://localhost:8765`，接口见 `qwen3-tts-mlx/API_FOR_KIMI.md`）。
-- 生产服务器通过 **SSH 反向隧道**访问它：Mac 上的 launchd 任务 `com.ledouniu.tts-tunnel` 把 VPS 的 `127.0.0.1:8765` 转发到 Mac 的 8765（开机自启、断线自动重连，日志 `/tmp/tts-tunnel.log`）。因此线上 `tts_base_url` 配置为 `http://localhost:8765`。隧道中断时线上合成（导入新书、管理页 ↻ 重新生成）会失败。
+- 生产服务器通过 **SSH 反向隧道**访问它：Mac 上的 launchd 任务 `com.ledouniu.tts-tunnel`（`ssh -N -R 127.0.0.1:8765:127.0.0.1:8765 ledouniu.com`，plist 在 `~/Library/LaunchAgents/`，开机自启、断线自动重连，日志 `/tmp/tts-tunnel.log`）。因此线上 `tts_base_url` 配置为 `http://localhost:8765`。隧道中断时线上合成（导入新书、管理页 ↻ 重新生成）会失败；排查：Mac 上 `launchctl list | grep tts-tunnel`，服务器上 `curl -m 5 http://127.0.0.1:8765/`。
 - 音频整体替换流程：从生产库导出词表 → `node scripts/regen-audio-local.cjs --in words.json --out data/audio-qwen`（本地批量合成，跳过已有文件）→ `rsync -az data/audio-qwen/ ledouniu.com:ledouniu/vocab-app/data/audio/`。文件名不变所以数据库无需改动；替换后需递增 `lib/client.ts` 的 `AUDIO_VERSION` 强制浏览器刷新缓存。
 
 ## 本地开发
@@ -24,7 +24,7 @@ npm run dev        # http://localhost:3003
 npx tsx scripts/seed.ts          # 默认 admin / admin123
 ```
 
-环境变量（`.env`）：`DATABASE_URL`、`SESSION_SECRET`、`DEEPSEEK_API_KEY`、`MIMO_API_KEY` 等，参考服务器上的配置。
+环境变量（`.env`）：`DATABASE_URL`、`SESSION_SECRET`、`DEEPSEEK_API_KEY`、`TTS_API_TOKEN`（TTS 服务未启用鉴权可留空）等，参考服务器上的配置。
 
 ## 部署（生产：https://ledouniu.com）
 

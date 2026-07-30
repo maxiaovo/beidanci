@@ -90,28 +90,15 @@ export async function getAIConfig(): Promise<AIConfig> {
 }
 
 // ---- TTS 语音配置（Setting 表 > 环境变量 > 默认值）----
-export const DEFAULT_TTS_PROVIDER = "mimo"; // mimo | qwen
-export const DEFAULT_TTS_MODEL = "mimo-v2.5-tts";
-export const DEFAULT_TTS_BASE_URL = "https://api.xiaomimimo.com/v1";
-export const DEFAULT_TTS_VOICE = "Mia";
-export const DEFAULT_TTS_FORMAT = "wav";
-// 发音指令：放在 user 消息中控制合成风格（目标文本在 assistant 消息，见 MiMo TTS 文档）
-export const DEFAULT_TTS_PROMPT =
-  "Read the following English text clearly and naturally, at a moderate pace, for a language learner.";
-// Qwen3-TTS 本地服务默认值
+// 只接本地 Qwen3-TTS 服务；生产服务器经 SSH 反向隧道以 127.0.0.1:8765 访问（见 README）
 export const DEFAULT_QWEN_BASE_URL = "http://localhost:8765";
 export const DEFAULT_QWEN_MODE = "clone"; // clone | custom | design
 export const DEFAULT_QWEN_VOICE = "matthew-full";
 export const DEFAULT_QWEN_LANGUAGE = "English";
 
 export interface TTSConfig {
-  provider: string; // mimo | qwen
-  model: string;
   baseUrl: string;
-  apiKey: string; // mimo: API Key；qwen: TTS_API_TOKEN（未启用鉴权可留空）
-  voice: string;
-  format: string;
-  prompt: string;
+  apiKey: string; // TTS_API_TOKEN（未启用鉴权可留空）
   qwenMode: string;
   qwenVoice: string; // clone: 音色名；custom: 预设说话人
   qwenVoices: string[]; // 音色池：非空时每次合成随机抽取一个（避免单调），空则固定用 qwenVoice
@@ -136,13 +123,8 @@ function parseVoicePool(raw: string | undefined): string[] {
 
 export async function getTTSConfig(): Promise<TTSConfig> {
   const keys = [
-    "tts_provider",
-    "tts_model",
     "tts_base_url",
     "tts_api_key",
-    "tts_voice",
-    "tts_format",
-    "tts_prompt",
     "tts_qwen_mode",
     "tts_qwen_voice",
     "tts_qwen_voices",
@@ -153,19 +135,9 @@ export async function getTTSConfig(): Promise<TTSConfig> {
   ];
   const rows = await prisma.setting.findMany({ where: { key: { in: keys } } });
   const s = Object.fromEntries(rows.map((r) => [r.key, r.value as string]));
-  const provider = s.tts_provider || process.env.TTS_PROVIDER || DEFAULT_TTS_PROVIDER;
   return {
-    provider,
-    model: s.tts_model || process.env.MIMO_TTS_MODEL || DEFAULT_TTS_MODEL,
-    baseUrl:
-      s.tts_base_url ||
-      (provider === "qwen"
-        ? process.env.QWEN_BASE_URL || DEFAULT_QWEN_BASE_URL
-        : process.env.MIMO_BASE_URL || DEFAULT_TTS_BASE_URL),
-    apiKey: s.tts_api_key || process.env.MIMO_API_KEY || "",
-    voice: s.tts_voice || process.env.MIMO_TTS_VOICE || DEFAULT_TTS_VOICE,
-    format: s.tts_format || process.env.MIMO_TTS_FORMAT || DEFAULT_TTS_FORMAT,
-    prompt: s.tts_prompt || process.env.MIMO_TTS_PROMPT || DEFAULT_TTS_PROMPT,
+    baseUrl: s.tts_base_url || process.env.QWEN_BASE_URL || DEFAULT_QWEN_BASE_URL,
+    apiKey: s.tts_api_key || process.env.TTS_API_TOKEN || "",
     qwenMode: s.tts_qwen_mode || process.env.QWEN_TTS_MODE || DEFAULT_QWEN_MODE,
     qwenVoice: s.tts_qwen_voice || process.env.QWEN_TTS_VOICE || DEFAULT_QWEN_VOICE,
     qwenVoices: parseVoicePool(s.tts_qwen_voices),
@@ -174,13 +146,8 @@ export async function getTTSConfig(): Promise<TTSConfig> {
     qwenTemperature: s.tts_qwen_temperature || process.env.QWEN_TTS_TEMPERATURE || "0",
     qwenMaxTokens: s.tts_qwen_max_tokens || process.env.QWEN_TTS_MAX_TOKENS || "2048",
     overridden: {
-      provider: !!s.tts_provider,
-      model: !!s.tts_model,
       baseUrl: !!s.tts_base_url,
       apiKey: !!s.tts_api_key,
-      voice: !!s.tts_voice,
-      format: !!s.tts_format,
-      prompt: !!s.tts_prompt,
       qwenMode: !!s.tts_qwen_mode,
       qwenVoice: !!s.tts_qwen_voice,
       qwenVoices: !!s.tts_qwen_voices,

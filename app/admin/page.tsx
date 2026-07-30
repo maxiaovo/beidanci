@@ -64,13 +64,8 @@ interface AISettings {
 }
 
 interface TTSSettings {
-  provider: string; // mimo | qwen
-  model: string;
   baseUrl: string;
   apiKey: string;
-  voice: string;
-  format: string;
-  prompt: string;
   qwenMode: string;
   qwenVoice: string;
   qwenVoices: string[]; // 音色池：勾选多个后导入时随机使用
@@ -270,7 +265,7 @@ export default function AdminPage() {
 
   // 探测本地 Qwen3-TTS 服务连接状态（按面板当前 Base URL / Token，可不先保存）
   async function checkTtsHealth(t: TTSSettings | null = tts) {
-    if (!t || t.provider !== "qwen") {
+    if (!t) {
       setTtsHealth({ state: "idle", detail: "" });
       return;
     }
@@ -295,12 +290,11 @@ export default function AdminPage() {
     }
   }
 
-  // TTS 设置加载（或切换引擎）后自动探测一次
-  const ttsProvider = tts?.provider;
+  // TTS 设置加载后自动探测一次服务连接
   useEffect(() => {
     if (tts) checkTtsHealth(tts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ttsProvider]);
+  }, [tts === null]);
 
   async function saveTTS() {
     if (!tts) return;
@@ -309,13 +303,8 @@ export default function AdminPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ttsProvider: tts.provider,
-        ttsModel: tts.model,
         ttsBaseUrl: tts.baseUrl,
         ttsApiKey: tts.apiKey,
-        ttsVoice: tts.voice,
-        ttsFormat: tts.format,
-        ttsPrompt: tts.prompt,
         ttsQwenMode: tts.qwenMode,
         ttsQwenVoice: tts.qwenVoice,
         ttsQwenVoices: tts.qwenVoices,
@@ -1389,69 +1378,55 @@ export default function AdminPage() {
             <h2 className="font-bold text-xl">TTS 语音设置</h2>
             {ttsMsg && <span className="text-sm text-green-600">{ttsMsg}</span>}
           </div>
-          {tts.provider === "qwen" && (
-            <div
-              className={`mb-4 flex items-center gap-3 flex-wrap rounded-xl px-4 py-2.5 text-sm ${
-                ttsHealth.state === "ok"
-                  ? "bg-green-50 text-green-700"
-                  : ttsHealth.state === "fail"
-                    ? "bg-red-50 text-red-600"
-                    : "bg-black/5 text-black/50"
-              }`}
+          <div
+            className={`mb-4 flex items-center gap-3 flex-wrap rounded-xl px-4 py-2.5 text-sm ${
+              ttsHealth.state === "ok"
+                ? "bg-green-50 text-green-700"
+                : ttsHealth.state === "fail"
+                  ? "bg-red-50 text-red-600"
+                  : "bg-black/5 text-black/50"
+            }`}
+          >
+            <span className="font-bold">
+              {ttsHealth.state === "checking" && "⏳ 正在检测本地 Qwen3-TTS 服务…"}
+              {ttsHealth.state === "ok" && "🟢 已连接本地 Qwen3-TTS，服务就绪"}
+              {ttsHealth.state === "fail" && "🔴 未连接到本地 Qwen3-TTS"}
+              {ttsHealth.state === "idle" && "未检测"}
+            </span>
+            {ttsHealth.detail && <span className="opacity-80">{ttsHealth.detail}</span>}
+            <button
+              type="button"
+              onClick={() => checkTtsHealth()}
+              disabled={ttsHealth.state === "checking"}
+              className="ml-auto underline underline-offset-2 cursor-pointer disabled:opacity-40"
             >
-              <span className="font-bold">
-                {ttsHealth.state === "checking" && "⏳ 正在检测本地 Qwen3-TTS 服务…"}
-                {ttsHealth.state === "ok" && "🟢 已连接本地 Qwen3-TTS，服务就绪"}
-                {ttsHealth.state === "fail" && "🔴 未连接到本地 Qwen3-TTS"}
-                {ttsHealth.state === "idle" && "未检测"}
-              </span>
-              {ttsHealth.detail && <span className="opacity-80">{ttsHealth.detail}</span>}
-              <button
-                type="button"
-                onClick={() => checkTtsHealth()}
-                disabled={ttsHealth.state === "checking"}
-                className="ml-auto underline underline-offset-2 cursor-pointer disabled:opacity-40"
-              >
-                重新检测
-              </button>
-            </div>
-          )}
+              重新检测
+            </button>
+          </div>
           <div className="flex flex-col gap-4 max-w-3xl">
             <div className="flex gap-4 flex-wrap">
-              <label className="text-sm text-black/60 flex-1 min-w-56">
-                引擎（provider）
-                <select
-                  value={tts.provider}
-                  onChange={(e) => setTts({ ...tts, provider: e.target.value })}
-                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono bg-white"
-                >
-                  <option value="mimo">mimo（小米 MiMo 云端）</option>
-                  <option value="qwen">qwen（本地 Qwen3-TTS）</option>
-                </select>
-              </label>
               <label className="text-sm text-black/60 flex-1 min-w-56">
                 Base URL
                 <input
                   value={tts.baseUrl}
                   onChange={(e) => setTts({ ...tts, baseUrl: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder={tts.provider === "qwen" ? "http://localhost:8765" : "https://api.xiaomimimo.com/v1"}
+                  placeholder="http://localhost:8765"
                 />
               </label>
               <label className="text-sm text-black/60 flex-1 min-w-56">
-                {tts.provider === "qwen" ? "Token（TTS_API_TOKEN，未启用可留空）" : "API Key"}
+                Token（TTS_API_TOKEN，未启用可留空）
                 <input
                   type="text"
                   value={tts.apiKey}
                   onChange={(e) => setTts({ ...tts, apiKey: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder={tts.provider === "qwen" ? "可留空" : "sk-..."}
+                  placeholder="可留空"
                   autoComplete="off"
                 />
               </label>
             </div>
-            {tts.provider === "qwen" ? (
-              <>
+            <>
                 <div className="flex gap-4 flex-wrap">
                   <label className="text-sm text-black/60 flex-1 min-w-56">
                     模式（mode）
@@ -1603,49 +1578,6 @@ export default function AdminPage() {
                   </div>
                 )}
               </>
-            ) : (
-              <>
-                <div className="flex gap-4 flex-wrap">
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    模型
-                    <input
-                      value={tts.model}
-                      onChange={(e) => setTts({ ...tts, model: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                      placeholder="mimo-v2.5-tts"
-                    />
-                  </label>
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    音色
-                    <input
-                      value={tts.voice}
-                      onChange={(e) => setTts({ ...tts, voice: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                      placeholder="Mia"
-                    />
-                  </label>
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    音频格式
-                    <input
-                      value={tts.format}
-                      onChange={(e) => setTts({ ...tts, format: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                      placeholder="wav"
-                    />
-                  </label>
-                </div>
-                <label className="text-sm text-black/60">
-                  发音指令（user 消息，控制语气/语速/发音风格；单词音频会在此指令后自动附带音标）
-                  <textarea
-                    value={tts.prompt}
-                    onChange={(e) => setTts({ ...tts, prompt: e.target.value })}
-                    rows={3}
-                    className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono text-xs"
-                    placeholder="Read the following English text clearly and naturally, at a moderate pace, for a language learner."
-                  />
-                </label>
-              </>
-            )}
             <button
               onClick={saveTTS}
               className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
@@ -1653,7 +1585,7 @@ export default function AdminPage() {
               保存 TTS 设置
             </button>
             <p className="text-xs text-black/40">
-              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。qwen 引擎指向本地 Qwen3-TTS 服务（默认 http://localhost:8765），服务器需能访问该地址才能在线生成。
+              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。TTS 指向本地 Qwen3-TTS 服务（默认 http://localhost:8765），服务器需能访问该地址才能在线生成。
             </p>
           </div>
         </section>
