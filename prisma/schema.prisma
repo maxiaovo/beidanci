@@ -24,6 +24,28 @@ model User {
   progresses  WordProgress[]
   logs        StudyLog[]
   assignments BookAssignment[]
+  reviewSkips ReviewSkip[]
+  messages    Message[]
+}
+
+// 跳过复习留痕：管理员开启"允许跳过"后，学习者当天可跳过复习门禁，每次跳过记一条
+model ReviewSkip {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// 家长留言：管理员发给指定学习者，有效期内触发展示
+model Message {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text         String
+  trigger      String   @default("start") // start | minutes | word
+  triggerValue Int?     // minutes=学习N分钟后；word=学到第N个词（1 起）
+  validUntil   DateTime // 有效期截止；active = now <= validUntil
+  createdAt    DateTime @default(now())
 }
 
 model Setting {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
 import { bookVisibleWhere } from "@/lib/book-access";
+import { isAllowSkipReview } from "@/lib/settings";
 
 function todayStart(): Date {
   const d = new Date();
@@ -62,9 +63,11 @@ export async function GET() {
     ...serializeWord(p.word as never),
   }));
 
-  // 新词：复习清完才下发
+  // 新词：复习清完（或当天已跳过复习）才下发
   let newWords: ReturnType<typeof serializeWord>[] = [];
-  const reviewsCleared = reviews.length === 0;
+  const skippedToday =
+    (await prisma.reviewSkip.count({ where: { userId: user.id, createdAt: { gte: start } } })) > 0;
+  const reviewsCleared = reviews.length === 0 || skippedToday;
   if (reviewsCleared) {
     const remaining = Math.max(0, user.dailyNewTarget - learnedToday);
     if (remaining > 0) {
@@ -97,6 +100,7 @@ export async function GET() {
       dailyNewTarget: user.dailyNewTarget,
       dailyReviewTarget: user.dailyReviewTarget,
       defaultCheckMode: user.defaultCheckMode,
+      allowSkipReview: await isAllowSkipReview(),
     },
   });
 }

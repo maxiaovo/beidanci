@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
 
 interface BookInfo {
   id: string;
@@ -33,6 +34,7 @@ export default function Dashboard() {
   const [books, setBooks] = useState<BookInfo[]>([]);
   const [session, setSession] = useState<SessionStats | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [msgQueue, setMsgQueue] = useState<ParentMessage[]>([]);
   const router = useRouter();
 
   useEffect(() => {
@@ -48,6 +50,12 @@ export default function Dashboard() {
       setSession(s);
       setLoaded(true);
     });
+    // 登录后落地页：展示"开始时"触发的家长留言
+    fetch("/api/messages").then(async (r) => {
+      if (!r.ok) return;
+      const d = await r.json();
+      setMsgQueue((d.messages as ParentMessage[]).filter((m) => m.trigger === "start"));
+    });
   }, [router]);
 
   if (!loaded) {
@@ -59,6 +67,7 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 flex flex-col gap-8">
+      <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
       {/* 今日任务 */}
       <section className="bg-white rounded-2xl shadow p-6">
         <h2 className="font-bold text-lg mb-4">今日任务</h2>

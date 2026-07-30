@@ -10,12 +10,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "无权限" }, { status: 403 });
   }
   const { id } = await params;
-  const logs = await prisma.studyLog.findMany({
-    where: { userId: id },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    include: { word: { select: { text: true, meaningCn: true } } },
-  });
+  const [logs, skips] = await Promise.all([
+    prisma.studyLog.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { word: { select: { text: true, meaningCn: true } } },
+    }),
+    prisma.reviewSkip.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
   return NextResponse.json({
     logs: logs.map((l) => ({
       id: l.id,
@@ -25,6 +32,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       result: l.result,
       createdAt: l.createdAt,
     })),
+    skips: skips.map((s) => ({ id: s.id, createdAt: s.createdAt })),
   });
 }
 

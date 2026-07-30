@@ -27,6 +27,21 @@ interface LogRow {
   createdAt: string;
 }
 
+interface SkipRow {
+  id: string;
+  createdAt: string;
+}
+
+interface AdminMessage {
+  id: string;
+  userId: string;
+  text: string;
+  trigger: string; // start | minutes | word
+  triggerValue: number | null;
+  validUntil: string;
+  createdAt: string;
+}
+
 interface AdminBook {
   id: string;
   name: string;
@@ -117,6 +132,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [selected, setSelected] = useState<UserRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [skips, setSkips] = useState<SkipRow[]>([]); // 该用户最近的跳过复习记录
   const [newTarget, setNewTarget] = useState(20);
   const [reviewTarget, setReviewTarget] = useState(100);
   const [saved, setSaved] = useState(false);
@@ -139,6 +155,11 @@ export default function AdminPage() {
   const [aiMsg, setAiMsg] = useState("");
   const [tts, setTts] = useState<TTSSettings | null>(null);
   const [ttsMsg, setTtsMsg] = useState("");
+  // 本地 Qwen3-TTS 服务连接状态（health 探测）
+  const [ttsHealth, setTtsHealth] = useState<{ state: "idle" | "checking" | "ok" | "fail"; detail: string }>({
+    state: "idle",
+    detail: "",
+  });
   // qwen 音色池：从服务拉取的可用音色 + 试听状态
   const [voicePool, setVoicePool] = useState<{ voices: string[]; speakers: string[] } | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
@@ -149,6 +170,15 @@ export default function AdminPage() {
   const [audioFilter, setAudioFilter] = useState("");
   const [regenBusy, setRegenBusy] = useState<Record<string, boolean>>({});
   const [strict, setStrict] = useState(false);
+  const [allowSkip, setAllowSkip] = useState(false); // 允许学习者跳过复习
+  // 家长留言
+  const [msgUserId, setMsgUserId] = useState("");
+  const [msgList, setMsgList] = useState<AdminMessage[]>([]);
+  const [msgText, setMsgText] = useState("");
+  const [msgTrigger, setMsgTrigger] = useState("start");
+  const [msgTriggerValue, setMsgTriggerValue] = useState(5);
+  const [msgValidDays, setMsgValidDays] = useState(7);
+  const [msgMsg, setMsgMsg] = useState("");
   const [siteTitle, setSiteTitle] = useState("");
   const [hasIcon, setHasIcon] = useState(false);
   const [iconVer, setIconVer] = useState(0);
@@ -170,6 +200,7 @@ export default function AdminPage() {
         const d = await r.json();
         setRegOpen(d.registrationOpen);
         setStrict(!!d.strictCheck);
+        setAllowSkip(!!d.allowSkipReview);
         setSiteTitle(d.siteTitle ?? "");
         setHasIcon(!!d.hasSiteIcon);
         if (d.ai) setAi(d.ai);
@@ -233,6 +264,40 @@ export default function AdminPage() {
     setTimeout(() => setAiMsg(""), 3000);
   }
 
+  // 探测本地 Qwen3-TTS 服务连接状态（按面板当前 Base URL / Token，可不先保存）
+  async function checkTtsHealth(t: TTSSettings | null = tts) {
+    if (!t || t.provider !== "qwen") {
+      setTtsHealth({ state: "idle", detail: "" });
+      return;
+    }
+    setTtsHealth({ state: "checking", detail: "" });
+    try {
+      const r = await fetch("/api/admin/tts-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl: t.baseUrl, apiKey: t.apiKey }),
+      });
+      const d = await r.json();
+      if (r.ok && d.ok) {
+        setTtsHealth({
+          state: "ok",
+          detail: `${d.voices.length} 个克隆音色 · ${d.speakers.length} 个预设说话人 · 支持模式 ${(d.modes as string[]).join(" / ")}`,
+        });
+      } else {
+        setTtsHealth({ state: "fail", detail: d.error || "连接失败" });
+      }
+    } catch {
+      setTtsHealth({ state: "fail", detail: "连接失败" });
+    }
+  }
+
+  // TTS 设置加载（或切换引擎）后自动探测一次
+  const ttsProvider = tts?.provider;
+  useEffect(() => {
+    if (tts) checkTtsHealth(tts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ttsProvider]);
+
   async function saveTTS() {
     if (!tts) return;
     setTtsMsg("");
@@ -260,6 +325,7 @@ export default function AdminPage() {
     if (r.ok) {
       setTts(d.tts);
       setTtsMsg("✓ 已保存，立即生效");
+      checkTtsHealth(d.tts);
     } else {
       setTtsMsg(d.error || "保存失败");
     }
@@ -387,6 +453,61 @@ export default function AdminPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ strictCheck: nextVal }),
     });
+  }
+
+  async function toggleAllowSkip() {
+    const nextVal = !allowSkip;
+    setAllowSkip(nextVal);
+    await fetch("/api/admin/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allowSkipReview: nextVal }),
+    });
+  }
+
+  // ---- 家长留言 ----
+  async function loadMessages(userId: string) {
+    if (!userId) {
+      setMsgList([]);
+      return;
+    }
+    const r = await fetch(`/api/admin/messages?userId=${userId}`);
+    if (r.ok) setMsgList((await r.json()).messages);
+  }
+
+  async function sendMessage() {
+    setMsgMsg("");
+    if (!msgUserId) return setMsgMsg("请先选择学习者");
+    if (!msgText.trim()) return setMsgMsg("留言内容不能为空");
+    const r = await fetch("/api/admin/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: msgUserId,
+        text: msgText,
+        trigger: msgTrigger,
+        triggerValue: msgTrigger === "start" ? undefined : msgTriggerValue,
+        validDays: msgValidDays,
+      }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      setMsgText("");
+      setMsgMsg("✓ 已发送");
+      loadMessages(msgUserId);
+    } else {
+      setMsgMsg(d.error || "发送失败");
+    }
+    setTimeout(() => setMsgMsg(""), 3000);
+  }
+
+  async function deleteMessage(id: string) {
+    await fetch("/api/admin/messages", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    setMsgList((list) => list.filter((m) => m.id !== id));
   }
 
   async function saveSite() {
@@ -542,6 +663,7 @@ export default function AdminPage() {
     if (r.ok) {
       const d = await r.json();
       setLogs(d.logs);
+      setSkips(d.skips ?? []);
     }
   }
 
@@ -762,32 +884,167 @@ export default function AdminPage() {
           </div>
           <div className="bg-white rounded-2xl shadow p-5 max-h-[50vh] overflow-y-auto">
             <h2 className="font-bold mb-3">最近记录</h2>
-            {logs.length === 0 ? (
+            {logs.length === 0 && skips.length === 0 ? (
               <p className="text-sm text-black/40">还没有学习记录</p>
             ) : (
               <div className="flex flex-col gap-2 text-sm">
-                {logs.map((l) => (
-                  <div key={l.id} className="flex items-baseline gap-2 border-b border-black/5 pb-1.5">
-                    <span className="font-medium">{l.word}</span>
-                    <span className="text-black/40 text-xs">{MODE_LABEL[l.mode] ?? l.mode}</span>
-                    <span
-                      className={`text-xs ${
-                        l.result === "correct" ? "text-green-600" : l.result === "wrong" ? "text-red-500" : "text-black/40"
-                      }`}
-                    >
-                      {RESULT_LABEL[l.result] ?? l.result}
-                    </span>
-                    <span className="ml-auto text-xs text-black/30">
-                      {new Date(l.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-                ))}
+                {[
+                  ...logs.map((l) => ({ kind: "log" as const, ...l })),
+                  ...skips.map((s) => ({ kind: "skip" as const, ...s })),
+                ]
+                  .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+                  .map((item) =>
+                    item.kind === "skip" ? (
+                      <div key={item.id} className="flex items-baseline gap-2 border-b border-black/5 pb-1.5">
+                        <span className="text-orange-500 font-medium">⚠️ 跳过了复习</span>
+                        <span className="ml-auto text-xs text-black/30">
+                          {new Date(item.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    ) : (
+                      <div key={item.id} className="flex items-baseline gap-2 border-b border-black/5 pb-1.5">
+                        <span className="font-medium">{item.word}</span>
+                        <span className="text-black/40 text-xs">{MODE_LABEL[item.mode] ?? item.mode}</span>
+                        <span
+                          className={`text-xs ${
+                            item.result === "correct" ? "text-green-600" : item.result === "wrong" ? "text-red-500" : "text-black/40"
+                          }`}
+                        >
+                          {RESULT_LABEL[item.result] ?? item.result}
+                        </span>
+                        <span className="ml-auto text-xs text-black/30">
+                          {new Date(item.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    ),
+                  )}
               </div>
             )}
           </div>
         </aside>
       )}
       </div>
+
+      {/* 家长留言 */}
+      <section className="bg-white rounded-2xl shadow p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-xl">家长留言</h2>
+          {msgMsg && <span className="text-sm text-green-600">{msgMsg}</span>}
+        </div>
+        <div className="flex gap-6 flex-wrap">
+          {/* 新建留言 */}
+          <div className="flex-1 min-w-72 flex flex-col gap-3">
+            <label className="text-sm text-black/60">
+              发给
+              <select
+                value={msgUserId}
+                onChange={(e) => {
+                  setMsgUserId(e.target.value);
+                  loadMessages(e.target.value);
+                }}
+                className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent bg-white"
+              >
+                <option value="">选择学习者…</option>
+                {(users ?? []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <textarea
+              value={msgText}
+              onChange={(e) => setMsgText(e.target.value)}
+              rows={3}
+              placeholder="想对孩子说的话…"
+              className="border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-accent resize-y"
+            />
+            <div className="flex gap-3 flex-wrap items-end">
+              <label className="text-sm text-black/60">
+                展示时机
+                <select
+                  value={msgTrigger}
+                  onChange={(e) => setMsgTrigger(e.target.value)}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 outline-none focus:ring-2 ring-accent bg-white"
+                >
+                  <option value="start">开始学习时</option>
+                  <option value="minutes">学习 N 分钟后</option>
+                  <option value="word">学到第 N 个词时</option>
+                </select>
+              </label>
+              {msgTrigger !== "start" && (
+                <label className="text-sm text-black/60">
+                  N =
+                  <input
+                    type="number"
+                    min={1}
+                    value={msgTriggerValue}
+                    onChange={(e) => setMsgTriggerValue(Number(e.target.value))}
+                    className="mt-1 block border rounded-lg px-3 py-1.5 w-20 outline-none focus:ring-2 ring-accent"
+                  />
+                </label>
+              )}
+              <label className="text-sm text-black/60">
+                有效期（天）
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={msgValidDays}
+                  onChange={(e) => setMsgValidDays(Number(e.target.value))}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-20 outline-none focus:ring-2 ring-accent"
+                />
+              </label>
+              <button
+                onClick={sendMessage}
+                className="bg-foreground text-white rounded-lg px-6 py-2 font-bold hover:opacity-90"
+              >
+                发送留言
+              </button>
+            </div>
+            <p className="text-xs text-black/40">有效期内，每次开始学习都会按设定的时机居中弹出。</p>
+          </div>
+          {/* 已有留言 */}
+          <div className="flex-1 min-w-72 max-h-80 overflow-y-auto">
+            {!msgUserId ? (
+              <p className="text-sm text-black/40">选择学习者后查看其留言列表</p>
+            ) : msgList.length === 0 ? (
+              <p className="text-sm text-black/40">暂无留言</p>
+            ) : (
+              <div className="flex flex-col gap-2 text-sm">
+                {msgList.map((m) => {
+                  const expired = +new Date(m.validUntil) < Date.now();
+                  return (
+                    <div key={m.id} className={`border rounded-xl p-3 ${expired ? "opacity-50" : ""}`}>
+                      <div className="whitespace-pre-wrap break-words">{m.text}</div>
+                      <div className="flex items-center gap-2 mt-2 text-xs text-black/40">
+                        <span>
+                          {m.trigger === "minutes"
+                            ? `学习 ${m.triggerValue} 分钟后`
+                            : m.trigger === "word"
+                              ? `学到第 ${m.triggerValue} 个词时`
+                              : "开始学习时"}
+                        </span>
+                        <span>
+                          {expired
+                            ? "已过期"
+                            : `有效至 ${new Date(m.validUntil).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                        </span>
+                        <button
+                          onClick={() => deleteMessage(m.id)}
+                          className="ml-auto text-red-400 hover:text-red-600 cursor-pointer"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* 词书分配 */}
       <section id="assign" className="bg-white rounded-2xl shadow p-5">
@@ -1065,6 +1322,33 @@ export default function AdminPage() {
             <h2 className="font-bold text-xl">TTS 语音设置</h2>
             {ttsMsg && <span className="text-sm text-green-600">{ttsMsg}</span>}
           </div>
+          {tts.provider === "qwen" && (
+            <div
+              className={`mb-4 flex items-center gap-3 flex-wrap rounded-xl px-4 py-2.5 text-sm ${
+                ttsHealth.state === "ok"
+                  ? "bg-green-50 text-green-700"
+                  : ttsHealth.state === "fail"
+                    ? "bg-red-50 text-red-600"
+                    : "bg-black/5 text-black/50"
+              }`}
+            >
+              <span className="font-bold">
+                {ttsHealth.state === "checking" && "⏳ 正在检测本地 Qwen3-TTS 服务…"}
+                {ttsHealth.state === "ok" && "🟢 已连接本地 Qwen3-TTS，服务就绪"}
+                {ttsHealth.state === "fail" && "🔴 未连接到本地 Qwen3-TTS"}
+                {ttsHealth.state === "idle" && "未检测"}
+              </span>
+              {ttsHealth.detail && <span className="opacity-80">{ttsHealth.detail}</span>}
+              <button
+                type="button"
+                onClick={() => checkTtsHealth()}
+                disabled={ttsHealth.state === "checking"}
+                className="ml-auto underline underline-offset-2 cursor-pointer disabled:opacity-40"
+              >
+                重新检测
+              </button>
+            </div>
+          )}
           <div className="flex flex-col gap-4 max-w-3xl">
             <div className="flex gap-4 flex-wrap">
               <label className="text-sm text-black/60 flex-1 min-w-56">
@@ -1453,6 +1737,22 @@ export default function AdminPage() {
             </button>
             <span className="text-xs text-black/40">
               {strict ? "已开启：拼写检查和选择检查都答对才算检查通过" : "已关闭"}
+            </span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
+            <span className="text-black/60">允许跳过复习</span>
+            <button
+              onClick={toggleAllowSkip}
+              className={`w-11 h-6 rounded-full relative transition-colors ${allowSkip ? "bg-green-400" : "bg-black/20"}`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                  allowSkip ? "left-[1.375rem]" : "left-0.5"
+                }`}
+              />
+            </button>
+            <span className="text-xs text-black/40">
+              {allowSkip ? "已开启：学习者可跳过当天复习门禁（每次跳过都会记录在案）" : "已关闭：必须先完成复习才能学新词"}
             </span>
           </label>
           <button

@@ -6,6 +6,7 @@ import Link from "next/link";
 import SegmentWord from "@/components/SegmentWord";
 import TypingTrainer from "@/components/TypingTrainer";
 import AudioButton from "@/components/AudioButton";
+import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
 import { playAudio, preloadAudio, postProgress, StudyWord } from "@/lib/client";
 
 type Phase = "show" | "segments" | "ex1" | "ex2" | "trace" | "traceEx1" | "traceEx2";
@@ -39,27 +40,81 @@ export default function LearnPage() {
   const [phase, setPhase] = useState<Phase>("show");
   const [extended, setExtended] = useState(false);
   const [blocked, setBlocked] = useState<number | null>(null); // 待复习数（门禁）
+  const [allowSkip, setAllowSkip] = useState(false); // 管理员允许跳过复习
   const [done, setDone] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [msgQueue, setMsgQueue] = useState<ParentMessage[]>([]); // 家长留言弹窗队列
+  const shownMsgRef = useRef<Set<string>>(new Set()); // 本次会话已弹过的留言
+  const wordMsgsRef = useRef<ParentMessage[]>([]); // word 触发的留言
+  const msgTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const router = useRouter();
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
-  useEffect(() => {
+  const loadSession = useCallback(() => {
     fetch("/api/session").then(async (r) => {
       if (r.status === 401) return router.push("/login");
       const d = await r.json();
+      setAllowSkip(!!d.stats.allowSkipReview);
       if (!d.reviewsCleared) {
         setBlocked(d.stats.dueCount);
       } else if (d.newWords.length === 0) {
         setDone(true);
       } else {
+        setBlocked(null);
         setWords(d.newWords);
         preloadAudio(d.newWords.flatMap((w: StudyWord) => [w.audioWord, w.audioEx1, w.audioEx2]));
       }
       setLoaded(true);
     });
   }, [router]);
+
+  useEffect(loadSession, [loadSession]);
+
+  // 拉取家长留言：start 立即弹出；minutes 定时弹出；word 由 idx 变化触发
+  useEffect(() => {
+    fetch("/api/messages").then(async (r) => {
+      if (!r.ok) return;
+      const d = await r.json();
+      for (const m of d.messages as ParentMessage[]) {
+        if (m.trigger === "start") {
+          enqueueMsg(m);
+        } else if (m.trigger === "minutes" && m.triggerValue) {
+          msgTimersRef.current.push(setTimeout(() => enqueueMsg(m), m.triggerValue * 60_000));
+        } else if (m.trigger === "word" && m.triggerValue) {
+          wordMsgsRef.current.push(m);
+        }
+      }
+    });
+    const timers = msgTimersRef.current;
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 每条留言每次会话只弹一次
+  function enqueueMsg(m: ParentMessage) {
+    if (shownMsgRef.current.has(m.id)) return;
+    shownMsgRef.current.add(m.id);
+    setMsgQueue((q) => [...q, m]);
+  }
+
+  // 学到第 N 个词时弹出对应留言
+  useEffect(() => {
+    for (const m of wordMsgsRef.current) {
+      if (m.triggerValue === idx + 1) enqueueMsg(m);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx]);
+
+  // 跳过复习：留痕后重新拉取队列（门禁放行）
+  async function skipReview() {
+    const r = await fetch("/api/skip-review", { method: "POST" });
+    if (r.ok) {
+      setLoaded(false);
+      setBlocked(null);
+      loadSession();
+    }
+  }
 
   const word: StudyWord | undefined = words[idx];
 
@@ -145,6 +200,16 @@ export default function LearnPage() {
           >
             去复习 {blocked} 词 →
           </Link>
+          {allowSkip && (
+            <div className="mt-4">
+              <button
+                onClick={skipReview}
+                className="text-sm text-black/40 underline underline-offset-4 hover:text-black/70 cursor-pointer"
+              >
+                跳过复习，直接学新词（家长会看到记录）
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -174,6 +239,7 @@ export default function LearnPage() {
       className="max-w-4xl mx-auto p-4 sm:p-6 flex flex-col items-center gap-6 select-none"
       onClick={onTapNav}
     >
+      <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
       {/* 顶部进度 + 扩展模式开关 */}
       <div className="w-full flex items-center justify-between flex-wrap gap-x-4 gap-y-2 text-sm text-black/50">
         <span>{word.bookName} · {word.unitTitle}</span>

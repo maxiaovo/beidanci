@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/session";
-import { getAIConfig, getTTSConfig, getSiteTitle, isRegistrationOpen, isStrictCheck, setSetting } from "@/lib/settings";
+import { getAIConfig, getTTSConfig, getSiteTitle, isRegistrationOpen, isStrictCheck, isAllowSkipReview, setSetting } from "@/lib/settings";
 import { findSiteIcon } from "@/lib/site";
 
 // 管理员站点配置：注册开关 + 站点信息 + 强检查 + AI 解析配置 + TTS 语音配置
@@ -14,6 +14,7 @@ export async function GET() {
   return NextResponse.json({
     registrationOpen: await isRegistrationOpen(),
     strictCheck: await isStrictCheck(),
+    allowSkipReview: await isAllowSkipReview(),
     siteTitle: await getSiteTitle(),
     hasSiteIcon: !!findSiteIcon(),
     ai: {
@@ -41,6 +42,9 @@ export async function PATCH(req: Request) {
   }
   if (typeof body.strictCheck === "boolean") {
     await setSetting("strict_check", body.strictCheck ? "true" : "false");
+  }
+  if (typeof body.allowSkipReview === "boolean") {
+    await setSetting("allow_skip_review", body.allowSkipReview ? "true" : "false");
   }
   if (typeof body.siteTitle === "string") {
     await setSetting("site_title", body.siteTitle.trim());
@@ -85,6 +89,7 @@ export async function PATCH(req: Request) {
     ok: true,
     registrationOpen: await isRegistrationOpen(),
     strictCheck: await isStrictCheck(),
+    allowSkipReview: await isAllowSkipReview(),
     siteTitle: await getSiteTitle(),
     hasSiteIcon: !!findSiteIcon(),
     ai: {

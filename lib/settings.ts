@@ -23,6 +23,11 @@ export async function isStrictCheck(): Promise<boolean> {
   return (await getSetting("strict_check", "false")) === "true";
 }
 
+// 允许跳过复习：开启后学习者可跳过当天复习门禁（留痕给管理员看）
+export async function isAllowSkipReview(): Promise<boolean> {
+  return (await getSetting("allow_skip_review", "false")) === "true";
+}
+
 // ---- 站点信息 ----
 export const DEFAULT_SITE_TITLE = "背单词";
 
