@@ -25,10 +25,12 @@ export function localVersion(): string {
 }
 
 // 从 GitHub 读取 main 分支的版本号；网络失败返回 null
+// 注意：raw.githubusercontent.com 走 Fastly CDN，默认会缓存数分钟；
+// 加时间戳参数 bust CDN 缓存，否则刚推送的新版本可能查不到
 export async function latestVersion(): Promise<string | null> {
   try {
     const res = await fetch(
-      `https://raw.githubusercontent.com/${REPO}/main/package.json`,
+      `https://raw.githubusercontent.com/${REPO}/main/package.json?t=${Date.now()}`,
       { cache: "no-store", signal: AbortSignal.timeout(10000) }
     );
     if (!res.ok) return null;
