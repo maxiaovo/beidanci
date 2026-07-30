@@ -61,7 +61,8 @@ model Book {
   name          String
   ownerId       String
   owner         User     @relation(fields: [ownerId], references: [id])
-  status        String   @default("ready") // processing | ready | error
+  status        String   @default("ready") // queued | processing | ready | error | stopped
+  rawUnits      String   @default("[]") // 导入原始单元文本 JSON，断点续传用
   audioDone     Int      @default(0)
   audioTotal    Int      @default(0)
   analyzeDone   Int      @default(0) // AI 分析阶段进度（单元数）

@@ -72,6 +72,16 @@ export default function WordsIndex() {
     await fetch(`/api/books/${b.id}/stop`, { method: "POST" });
   }
 
+  async function resumeImport(b: BookInfo) {
+    setBooks((prev) => prev?.map((x) => (x.id === b.id ? { ...x, status: "queued" } : x)) ?? null);
+    const r = await fetch(`/api/books/${b.id}/resume`, { method: "POST" });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      alert(d.error || "续传失败，请重试");
+      setBooks((prev) => prev?.map((x) => (x.id === b.id ? { ...x, status: b.status } : x)) ?? null);
+    }
+  }
+
   async function deleteBook(b: BookInfo) {
     if (!confirm(`确定删除「${b.name}」吗？书中的单词、学习记录和音频都会删除，不可恢复。`)) return;
     const res = await fetch(`/api/books/${b.id}`, { method: "DELETE" });
@@ -122,21 +132,29 @@ export default function WordsIndex() {
                 <div key={b.id} className="rounded-2xl p-5 shadow bg-white border border-red-200">
                   <div className="font-bold text-lg leading-snug">{b.name}</div>
                   <div className="text-sm text-red-500 mt-1">
-                    {b.status === "stopped" ? "已停止导入，已生成内容保留" : "导入失败，请重新导入"}
+                    {b.status === "stopped" ? "已停止导入，已生成内容保留" : "导入中断，可从断点继续"}
                   </div>
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex gap-2 flex-wrap items-center">
                     {b.total > 0 && (
                       <Link href={`/words/${b.id}`} className="text-sm text-blue-500 underline">
                         查看已有 {b.total} 词 →
                       </Link>
                     )}
                     {canManage(b) && (
-                      <button
-                        onClick={() => deleteBook(b)}
-                        className="text-sm text-black/40 border border-black/10 rounded-lg px-3 py-1 hover:bg-black/5"
-                      >
-                        删除
-                      </button>
+                      <>
+                        <button
+                          onClick={() => resumeImport(b)}
+                          className="text-sm text-white bg-blue-500 rounded-lg px-3 py-1 hover:bg-blue-600"
+                        >
+                          继续导入
+                        </button>
+                        <button
+                          onClick={() => deleteBook(b)}
+                          className="text-sm text-black/40 border border-black/10 rounded-lg px-3 py-1 hover:bg-black/5"
+                        >
+                          删除
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

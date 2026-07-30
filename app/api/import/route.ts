@@ -37,7 +37,13 @@ export async function POST(req: Request) {
 
   const units = splitIntoUnits(text);
   const book = await prisma.book.create({
-    data: { name: bookName, ownerId: user.id, status: "queued", sharedWithAll: assignAll },
+    data: {
+      name: bookName,
+      ownerId: user.id,
+      status: "queued",
+      sharedWithAll: assignAll,
+      rawUnits: JSON.stringify(units), // 存原始文本，导入中断后可断点续传
+    },
   });
   if (assignTo.length) {
     // 新书无历史分配，不会重复

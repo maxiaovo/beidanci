@@ -1,6 +1,6 @@
 {
   "name": "vocab-app",
-  "version": "0.13.2",
+  "version": "0.14.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3003",

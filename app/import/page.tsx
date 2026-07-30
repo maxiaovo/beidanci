@@ -159,6 +159,17 @@ export default function ImportPage() {
     await fetch(`/api/books/${t.bookId}/stop`, { method: "POST" });
   }
 
+  async function resumeImport(t: Task) {
+    if (!t.bookId) return;
+    const r = await fetch(`/api/books/${t.bookId}/resume`, { method: "POST" });
+    if (r.ok) {
+      updateTask(t.key, { phase: "waiting", error: undefined });
+    } else {
+      const d = await r.json().catch(() => ({}));
+      updateTask(t.key, { error: d.error || "续传失败" });
+    }
+  }
+
   async function deleteBook(t: Task) {
     if (!t.bookId) {
       setTasks((prev) => prev.filter((x) => x.key !== t.key));
@@ -306,12 +317,22 @@ export default function ImportPage() {
                       </button>
                     )}
                     {(t.phase === "ready" || t.phase === "stopped" || t.phase === "error") && (
-                      <button
-                        onClick={() => deleteBook(t)}
-                        className="text-sm text-black/40 border border-black/10 rounded-lg px-2.5 py-1 hover:bg-black/5"
-                      >
-                        删除
-                      </button>
+                      <>
+                        {(t.phase === "stopped" || t.phase === "error") && t.bookId && (
+                          <button
+                            onClick={() => resumeImport(t)}
+                            className="text-sm text-blue-500 border border-blue-200 rounded-lg px-2.5 py-1 hover:bg-blue-50"
+                          >
+                            继续导入
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteBook(t)}
+                          className="text-sm text-black/40 border border-black/10 rounded-lg px-2.5 py-1 hover:bg-black/5"
+                        >
+                          删除
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -342,7 +363,7 @@ export default function ImportPage() {
                   <div className="text-red-500 text-sm mt-2">{t.error || "导入出错，请重试"}</div>
                 )}
                 {t.phase === "stopped" && (
-                  <div className="text-black/40 text-sm mt-2">已停止导入，已生成的单词和音频会保留。</div>
+                  <div className="text-black/40 text-sm mt-2">已停止导入，已生成的单词和音频会保留，点「继续导入」可从断点恢复。</div>
                 )}
               </div>
             );

@@ -1,8 +1,11 @@
-// 导入后台任务：DeepSeek 分析 → 入库 → MiMo TTS 音频
+// 导入后台任务：DeepSeek 分析 → 入库 → Qwen3-TTS 音频
 // 全局串行队列：同一时间只处理一本书，其余排队等待
+// 断点续传：分析阶段跳过已入库单元，音频阶段只补缺失条目；原始文本存 Book.rawUnits
+import fs from "fs";
+import path from "path";
 import { prisma } from "./db";
 import { analyzeUnitText } from "./deepseek";
-import { synthesize } from "./tts";
+import { AUDIO_DIR, synthesize } from "./tts";
 import type { RawUnit } from "./parsers";
 
 interface Job {
@@ -46,6 +49,26 @@ let currentBookId: string | null = null;
 export function enqueueImport(bookId: string, units: RawUnit[]) {
   queue.push({ bookId, units });
   void pump();
+}
+
+// 断点续传：从 Book.rawUnits 恢复任务并入队；已在队列/处理中则忽略
+// 旧书没有 rawUnits 时以空单元列表入队——分析阶段自动跳过，只补缺失音频
+export async function resumeImport(bookId: string): Promise<{ ok: boolean; error?: string }> {
+  if (currentBookId === bookId || queue.some((j) => j.bookId === bookId)) return { ok: true };
+  const book = await prisma.book.findUnique({ where: { id: bookId } });
+  if (!book) return { ok: false, error: "单词书不存在" };
+  let units: RawUnit[] = [];
+  try {
+    units = JSON.parse(book.rawUnits || "[]");
+  } catch {
+    units = [];
+  }
+  if (!units.length) {
+    logImportEvent({ kind: "info", bookId, text: "该书无原始文本记录，仅补齐缺失音频" });
+  }
+  await prisma.book.update({ where: { id: bookId }, data: { status: "queued" } });
+  enqueueImport(bookId, units);
+  return { ok: true };
 }
 
 // 请求停止某本书的导入（排队中则直接移除；处理中则在当前 AI 调用结束后停止）
@@ -92,9 +115,20 @@ async function runImport(bookId: string, units: RawUnit[]) {
       data: { status: "processing", analyzeTotal: units.length, analyzeDone: 0 },
     });
 
-    // 1) 逐单元分析并入库
+    // 1) 逐单元分析并入库（断点续传：已入库且非空的单元跳过；空单元删掉重做）
+    const existingUnits = await prisma.unit.findMany({
+      where: { bookId },
+      select: { id: true, orderIndex: true, _count: { select: { words: true } } },
+    });
+    const unitByIndex = new Map(existingUnits.map((u) => [u.orderIndex, u]));
     for (let ui = 0; ui < units.length; ui++) {
       if (isStopped(bookId)) throw new Stopped();
+      const ex = unitByIndex.get(ui);
+      if (ex && ex._count.words > 0) {
+        await prisma.book.update({ where: { id: bookId }, data: { analyzeDone: ui + 1 } });
+        continue;
+      }
+      if (ex) await prisma.unit.delete({ where: { id: ex.id } });
       const raw = units[ui];
       let words;
       try {
@@ -155,16 +189,26 @@ async function runImport(bookId: string, units: RawUnit[]) {
     for (const w of allWords) {
       if (isStopped(bookId)) throw new Stopped();
       const out: { voice?: string } = {};
-      const audioWord = await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic, out });
-      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音${voiceTag(out)}`, ok: !!audioWord });
+      // 断点续传：已有记录且文件存在的条目跳过，只补缺失的
+      let audioWord = w.audioWord;
+      if (!hasAudioFile(audioWord)) {
+        audioWord = await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic, out });
+        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音${voiceTag(out)}`, ok: !!audioWord });
+        if (isStopped(bookId)) throw new Stopped();
+      }
       done++;
-      if (isStopped(bookId)) throw new Stopped();
-      const audioEx1 = await synthesize(w.example1, `${w.id}_ex1.wav`, { out });
-      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句1${voiceTag(out)}：${w.example1.slice(0, 60)}`, ok: !!audioEx1 });
+      let audioEx1 = w.audioEx1;
+      if (!hasAudioFile(audioEx1)) {
+        audioEx1 = await synthesize(w.example1, `${w.id}_ex1.wav`, { out });
+        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句1${voiceTag(out)}：${w.example1.slice(0, 60)}`, ok: !!audioEx1 });
+        if (isStopped(bookId)) throw new Stopped();
+      }
       done++;
-      if (isStopped(bookId)) throw new Stopped();
-      const audioEx2 = await synthesize(w.example2, `${w.id}_ex2.wav`, { out });
-      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句2${voiceTag(out)}：${w.example2.slice(0, 60)}`, ok: !!audioEx2 });
+      let audioEx2 = w.audioEx2;
+      if (!hasAudioFile(audioEx2)) {
+        audioEx2 = await synthesize(w.example2, `${w.id}_ex2.wav`, { out });
+        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句2${voiceTag(out)}：${w.example2.slice(0, 60)}`, ok: !!audioEx2 });
+      }
       done++;
       await prisma.word.update({
         where: { id: w.id },
@@ -199,16 +243,7 @@ function voiceTag(out: { voice?: string }): string {
   return out.voice ? `（${out.voice}）` : "";
 }
 
-// 补生成缺失音频（可后续手动触发）
-export async function backfillAudio(bookId: string) {
-  const words = await prisma.word.findMany({
-    where: { unit: { bookId }, OR: [{ audioWord: null }, { audioEx1: null }, { audioEx2: null }] },
-  });
-  for (const w of words) {
-    if (isStopped(bookId)) break;
-    const audioWord = w.audioWord ?? (await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic }));
-    const audioEx1 = w.audioEx1 ?? (await synthesize(w.example1, `${w.id}_ex1.wav`));
-    const audioEx2 = w.audioEx2 ?? (await synthesize(w.example2, `${w.id}_ex2.wav`));
-    await prisma.word.update({ where: { id: w.id }, data: { audioWord, audioEx1, audioEx2 } });
-  }
+// 音频记录有效 = 数据库有文件名且文件真实存在（防止文件被清理后漏补）
+function hasAudioFile(name: string | null): boolean {
+  return !!name && fs.existsSync(path.join(AUDIO_DIR, name));
 }

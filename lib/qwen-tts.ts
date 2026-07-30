@@ -29,27 +29,45 @@ export async function synthesizeQwen(cfg: TTSConfig, text: string, voiceOverride
   } else {
     body.instruct = cfg.qwenInstruct; // design 模式 instruct = 音色描述（必填）
   }
-  try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(300_000),
-    });
-    if (!res.ok) {
-      console.error(`Qwen TTS HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-      return null;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+
+  // 瞬断重试：网络错误 / 5xx 重试（隧道抖动可恢复）；4xx（如音色不存在）不重试
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(300_000),
+      });
+      if (!res.ok) {
+        const errText = (await res.text()).slice(0, 300);
+        console.error(`Qwen TTS HTTP ${res.status}: ${errText}`);
+        if (res.status >= 500 && attempt < 3) {
+          await sleep(attempt * 2000);
+          continue;
+        }
+        return null;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 100) {
+        console.error("Qwen TTS 返回音频过短，疑似异常", buf.length);
+        if (attempt < 3) {
+          await sleep(attempt * 2000);
+          continue;
+        }
+        return null;
+      }
+      return buf;
+    } catch (e) {
+      console.error(`Qwen TTS 调用失败（第 ${attempt} 次）:`, e);
+      if (attempt < 3) await sleep(attempt * 2000);
     }
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 100) {
-      console.error("Qwen TTS 返回音频过短，疑似异常", buf.length);
-      return null;
-    }
-    return buf;
-  } catch (e) {
-    console.error("Qwen TTS 调用失败:", e);
-    return null;
   }
+  return null;
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }

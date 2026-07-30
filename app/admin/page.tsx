@@ -168,6 +168,24 @@ export default function AdminPage() {
   const [audioWords, setAudioWords] = useState<AudioWord[] | null>(null);
   const [audioFilter, setAudioFilter] = useState("");
   const [regenBusy, setRegenBusy] = useState<Record<string, boolean>>({});
+  const [backfillMsg, setBackfillMsg] = useState("");
+
+  // 一键补齐全部缺失音频：后台按书断点续传，只生成缺失的条目
+  async function backfillAllAudio() {
+    setBackfillMsg("提交中…");
+    try {
+      const r = await fetch("/api/admin/audio/backfill", { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setBackfillMsg(d.books > 0 ? `已对 ${d.books} 本书开始后台补齐，进度见导入页 / 单词书页` : "没有缺失音频");
+      } else {
+        setBackfillMsg(d.error || "操作失败");
+      }
+    } catch {
+      setBackfillMsg("网络错误，请重试");
+    }
+    setTimeout(() => setBackfillMsg(""), 8000);
+  }
   const [strict, setStrict] = useState(false);
   const [allowSkip, setAllowSkip] = useState(false); // 允许学习者跳过复习
   // 家长留言
@@ -1606,12 +1624,24 @@ export default function AdminPage() {
       <section className="bg-white rounded-2xl shadow p-5">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h2 className="font-bold text-xl">音频资源</h2>
-          <input
-            value={audioFilter}
-            onChange={(e) => setAudioFilter(e.target.value)}
-            placeholder="筛选单词 / 音标 / 词书 / 单元"
-            className="border rounded-lg px-3 py-1.5 text-sm w-72 outline-none focus:ring-2 ring-accent"
-          />
+          <div className="flex items-center gap-3 flex-wrap">
+            {audioWords &&
+              audioWords.some((w) => !w.fileWord || !w.fileEx1 || !w.fileEx2) && (
+                <button
+                  onClick={backfillAllAudio}
+                  className="border border-accent text-accent rounded-lg px-3 py-1.5 text-sm hover:bg-accent/10"
+                >
+                  补齐全部缺失音频
+                </button>
+              )}
+            {backfillMsg && <span className="text-sm text-black/60">{backfillMsg}</span>}
+            <input
+              value={audioFilter}
+              onChange={(e) => setAudioFilter(e.target.value)}
+              placeholder="筛选单词 / 音标 / 词书 / 单元"
+              className="border rounded-lg px-3 py-1.5 text-sm w-72 outline-none focus:ring-2 ring-accent"
+            />
+          </div>
         </div>
         {!audioWords ? (
           <p className="text-sm text-black/40">加载中…</p>
