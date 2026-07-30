@@ -7,6 +7,7 @@ interface UserRow {
   id: string;
   username: string;
   role: string;
+  parentId: string | null;
   avatarUrl: string | null;
   dailyNewTarget: number;
   dailyReviewTarget: number;
@@ -143,6 +144,9 @@ export default function AdminPage() {
   const [createMsg, setCreateMsg] = useState("");
   const [resetPwd, setResetPwd] = useState("");
   const [resetMsg, setResetMsg] = useState("");
+  // 家长绑定孩子：选中的孩子 id 集合
+  const [childSel, setChildSel] = useState<Set<string>>(new Set());
+  const [bindMsg, setBindMsg] = useState("");
   const [books, setBooks] = useState<AdminBook[]>([]);
   const [selBooks, setSelBooks] = useState<Set<string>>(new Set());
   const [selUsers, setSelUsers] = useState<Set<string>>(new Set());
@@ -659,12 +663,30 @@ export default function AdminPage() {
     setReviewTarget(u.dailyReviewTarget);
     setResetPwd("");
     setResetMsg("");
+    setBindMsg("");
+    // 家长：回显已绑定的孩子
+    setChildSel(new Set((users ?? []).filter((x) => x.parentId === u.id).map((x) => x.id)));
     const r = await fetch(`/api/admin/users/${u.id}`);
     if (r.ok) {
       const d = await r.json();
       setLogs(d.logs);
       setSkips(d.skips ?? []);
     }
+  }
+
+  // 保存家长与孩子的绑定关系
+  async function saveBindings() {
+    if (!selected) return;
+    setBindMsg("");
+    const r = await fetch(`/api/admin/users/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ childIds: [...childSel] }),
+    });
+    const d = await r.json();
+    setBindMsg(r.ok ? "✓ 绑定已保存" : d.error || "保存失败");
+    if (r.ok) load();
+    setTimeout(() => setBindMsg(""), 3000);
   }
 
   async function saveTargets() {
@@ -732,6 +754,7 @@ export default function AdminPage() {
               className="mt-1 block border rounded-lg px-3 py-1.5"
             >
               <option value="user">普通用户</option>
+              <option value="parent">家长</option>
               <option value="admin">管理员</option>
             </select>
           </label>
@@ -776,6 +799,7 @@ export default function AdminPage() {
                       {u.username}
                     </span>
                     {u.role === "admin" && <span className="ml-1 text-xs text-black/40">(管理员)</span>}
+                    {u.role === "parent" && <span className="ml-1 text-xs text-black/40">(家长)</span>}
                   </td>
                   <td className="text-right px-2 py-2.5">{u.todayLogs}</td>
                   <td className="text-right px-2 py-2.5">{u.totalLogs}</td>
@@ -829,36 +853,77 @@ export default function AdminPage() {
               </div>
               {avatarMsg && <span className="text-sm text-green-600 ml-auto">{avatarMsg}</span>}
             </div>
-            <h2 className="font-bold mb-3">任务安排</h2>
+            {selected.role !== "parent" && (
+              <>
+                <h2 className="font-bold mb-3">任务安排</h2>
+                <div className="flex flex-col gap-3">
+                  <label className="text-sm text-black/60">
+                    每日新词目标
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={newTarget}
+                      onChange={(e) => setNewTarget(Number(e.target.value))}
+                      className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
+                    />
+                  </label>
+                  <label className="text-sm text-black/60">
+                    每日复习上限
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={reviewTarget}
+                      onChange={(e) => setReviewTarget(Number(e.target.value))}
+                      className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
+                    />
+                  </label>
+                  <button
+                    onClick={saveTargets}
+                    className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
+                  >
+                    {saved ? "✓ 已保存" : "保存修改"}
+                  </button>
+                </div>
+              </>
+            )}
             <div className="flex flex-col gap-3">
-              <label className="text-sm text-black/60">
-                每日新词目标
-                <input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={newTarget}
-                  onChange={(e) => setNewTarget(Number(e.target.value))}
-                  className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
-                />
-              </label>
-              <label className="text-sm text-black/60">
-                每日复习上限
-                <input
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={reviewTarget}
-                  onChange={(e) => setReviewTarget(Number(e.target.value))}
-                  className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
-                />
-              </label>
-              <button
-                onClick={saveTargets}
-                className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
-              >
-                {saved ? "✓ 已保存" : "保存修改"}
-              </button>
+              {selected.role === "parent" && (
+                <div>
+                  <h2 className="font-bold mb-3">绑定孩子</h2>
+                  <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+                    {(users ?? []).filter((x) => x.role === "user").map((x) => (
+                      <label key={x.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={childSel.has(x.id)}
+                          onChange={(e) => {
+                            const next = new Set(childSel);
+                            if (e.target.checked) next.add(x.id);
+                            else next.delete(x.id);
+                            setChildSel(next);
+                          }}
+                        />
+                        {x.username}
+                        {x.parentId && x.parentId !== selected.id && (
+                          <span className="text-xs text-black/30">(已绑定其他家长)</span>
+                        )}
+                      </label>
+                    ))}
+                    {(users ?? []).filter((x) => x.role === "user").length === 0 && (
+                      <p className="text-sm text-black/40">还没有可绑定的学习者账号</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={saveBindings}
+                    className="mt-3 w-full bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
+                  >
+                    保存绑定
+                  </button>
+                  {bindMsg && <div className="text-sm text-green-600 mt-1">{bindMsg}</div>}
+                </div>
+              )}
               {/* 重置密码 */}
               <div className="border-t border-black/5 pt-3">
                 <label className="text-sm text-black/60">
@@ -882,6 +947,7 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+          {selected.role !== "parent" && (
           <div className="bg-white rounded-2xl shadow p-5 max-h-[50vh] overflow-y-auto">
             <h2 className="font-bold mb-3">最近记录</h2>
             {logs.length === 0 && skips.length === 0 ? (
@@ -921,6 +987,7 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+          )}
         </aside>
       )}
       </div>
@@ -945,7 +1012,7 @@ export default function AdminPage() {
                 className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent bg-white"
               >
                 <option value="">选择学习者…</option>
-                {(users ?? []).map((u) => (
+                {(users ?? []).filter((u) => u.role === "user").map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.username}
                   </option>

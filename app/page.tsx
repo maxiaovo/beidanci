@@ -38,6 +38,11 @@ export default function Dashboard() {
   const router = useRouter();
 
   useEffect(() => {
+    // 家长不参与学习，落地即转到家长页
+    fetch("/api/auth/me").then(async (r) => {
+      const d = await r.json();
+      if (d.user?.role === "parent") router.replace("/parent");
+    });
     Promise.all([
       fetch("/api/books").then((r) => (r.status === 401 ? null : r.json())),
       fetch("/api/session").then((r) => (r.status === 401 ? null : r.json())),

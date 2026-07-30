@@ -61,3 +61,24 @@ export async function requireAdmin() {
   if (user.role !== "admin") throw new Error("FORBIDDEN");
   return user;
 }
+
+// 家长（parent）不参与学习：学习者接口用它拦截
+export function isParent(user: { role: string }) {
+  return user.role === "parent";
+}
+
+// 能否查看/管理某个孩子：管理员可以管所有人；家长只能管自己绑定的孩子
+export async function canAccessChild(viewer: { id: string; role: string }, childId: string) {
+  if (viewer.role === "admin") return true;
+  if (viewer.role !== "parent") return false;
+  const child = await prisma.user.findUnique({ where: { id: childId }, select: { parentId: true } });
+  return child?.parentId === viewer.id;
+}
+
+// 家长接口的可见孩子范围：家长=自己的孩子；管理员=所有学习者
+export async function listChildUsers(viewer: { id: string; role: string }) {
+  if (viewer.role === "admin") {
+    return prisma.user.findMany({ where: { role: "user" }, orderBy: { createdAt: "asc" } });
+  }
+  return prisma.user.findMany({ where: { parentId: viewer.id }, orderBy: { createdAt: "asc" } });
+}

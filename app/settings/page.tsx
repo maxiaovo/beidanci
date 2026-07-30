@@ -36,6 +36,7 @@ export default function SettingsPage() {
 
   // 系统更新（仅管理员）
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isParent, setIsParent] = useState(false);
   const [version, setVersion] = useState("");
   const [latest, setLatest] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -87,6 +88,7 @@ export default function SettingsPage() {
       const loadedTheme: ThemeState = d.user.theme || DEFAULT_THEME;
       setTheme(loadedTheme);
       applyThemeVars(getThemeVars(loadedTheme));
+      if (d.user.role === "parent") setIsParent(true);
       if (d.user.role === "admin") {
         setIsAdmin(true);
         // 读取当前版本与更新状态；若有进行中的更新则继续轮询
@@ -281,6 +283,8 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {!isParent && (
+          <>
         <div>
           <label className="text-sm text-black/60 block mb-1">每日新词目标（1-200）</label>
           <input
@@ -322,6 +326,8 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
+          </>
+        )}
         <button
           onClick={save}
           className="bg-foreground text-white rounded-xl py-2.5 font-bold hover:opacity-90"

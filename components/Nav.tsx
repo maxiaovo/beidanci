@@ -23,6 +23,12 @@ const TABS = [
   { href: "/settings", icon: "👤", label: "我的" },
 ];
 
+// 家长不参与学习，只看孩子
+const PARENT_TABS = [
+  { href: "/parent", icon: "👨‍👧", label: "孩子" },
+  { href: "/settings", icon: "👤", label: "我的" },
+];
+
 export default function Nav() {
   const [me, setMe] = useState<Me | null>(null);
   const [site, setSite] = useState<SiteCfg>({ siteTitle: "背单词", hasSiteIcon: false });
@@ -73,7 +79,13 @@ export default function Nav() {
         </Link>
 
         {/* 桌面端导航（手机端用底部 Tab 栏） */}
-        {me && (
+        {me && me.role === "parent" && (
+          <nav className="hidden sm:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
+            <Link href="/parent" className={linkCls("/parent")}>孩子</Link>
+            <Link href="/settings" className={linkCls("/settings")}>设置</Link>
+          </nav>
+        )}
+        {me && me.role !== "parent" && (
           <nav className="hidden sm:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
             <Link href="/" className={linkCls("/")}>首页</Link>
             <Link href="/words" className={linkCls("/words")}>单词书</Link>
@@ -141,7 +153,7 @@ export default function Nav() {
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
           <div className="flex">
-            {TABS.map((t) => (
+            {(me.role === "parent" ? PARENT_TABS : TABS).map((t) => (
               <Link
                 key={t.href}
                 href={t.href}

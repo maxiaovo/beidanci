@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { getSessionUser, listChildUsers } from "@/lib/session";
 
-// 管理员：用户列表 + 学习统计
+// 家长：孩子列表 + 学习统计（管理员等价于拥有全部学习者）
 export async function GET() {
-  try {
-    await requireAdmin();
-  } catch {
+  const viewer = await getSessionUser();
+  if (!viewer) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  if (viewer.role !== "parent" && viewer.role !== "admin") {
     return NextResponse.json({ error: "无权限" }, { status: 403 });
   }
 
-  const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
+  const children = await listChildUsers(viewer);
   const start = new Date();
   start.setHours(0, 0, 0, 0);
 
   const result = [];
-  for (const u of users) {
+  for (const u of children) {
     const [todayLogs, totalLogs, correctLogs, dueCount, learnedCount] = await Promise.all([
       prisma.studyLog.count({ where: { userId: u.id, createdAt: { gte: start } } }),
       prisma.studyLog.count({ where: { userId: u.id } }),
@@ -40,8 +40,6 @@ export async function GET() {
     result.push({
       id: u.id,
       username: u.username,
-      role: u.role,
-      parentId: u.parentId,
       avatarUrl: u.avatarUrl,
       dailyNewTarget: u.dailyNewTarget,
       dailyReviewTarget: u.dailyReviewTarget,
@@ -53,34 +51,5 @@ export async function GET() {
       streak,
     });
   }
-  return NextResponse.json({ users: result });
-}
-
-// 管理员创建用户
-export async function POST(req: Request) {
-  try {
-    await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
-  }
-  const { username, password, role } = await req.json().catch(() => ({}));
-  if (!username || String(username).trim().length < 2) {
-    return NextResponse.json({ error: "用户名至少2位" }, { status: 400 });
-  }
-  if (!password || String(password).length < 4) {
-    return NextResponse.json({ error: "密码至少4位" }, { status: 400 });
-  }
-  const existing = await prisma.user.findUnique({ where: { username: String(username).trim() } });
-  if (existing) {
-    return NextResponse.json({ error: "用户名已被占用" }, { status: 409 });
-  }
-  const bcrypt = (await import("bcryptjs")).default;
-  await prisma.user.create({
-    data: {
-      username: String(username).trim(),
-      passwordHash: bcrypt.hashSync(String(password), 10),
-      role: ["admin", "parent"].includes(role) ? role : "user",
-    },
-  });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ children: result });
 }

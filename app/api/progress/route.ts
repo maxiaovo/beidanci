@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isParent } from "@/lib/session";
 import { advanceStage, nextReviewDate } from "@/lib/scheduler";
 import { isStrictCheck } from "@/lib/settings";
 
@@ -9,6 +9,7 @@ import { isStrictCheck } from "@/lib/settings";
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const { wordId, mode, result } = await req.json().catch(() => ({}));
   if (!wordId || !mode || !["correct", "wrong", "giveup"].includes(result)) {

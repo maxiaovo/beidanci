@@ -60,9 +60,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const bcrypt = (await import("bcryptjs")).default;
     data.passwordHash = bcrypt.hashSync(body.newPassword, 10);
   }
-  if (!Object.keys(data).length) {
+  // 绑定孩子：仅目标是家长时有效；childIds = 选中的孩子 id 列表
+  if (Array.isArray(body.childIds)) {
+    const target = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (!target) return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+    if (target.role !== "parent") {
+      return NextResponse.json({ error: "只有家长账号可以绑定孩子" }, { status: 400 });
+    }
+    const childIds = body.childIds.filter((x: unknown) => typeof x === "string") as string[];
+    await prisma.$transaction([
+      // 新选中的孩子绑定到该家长
+      prisma.user.updateMany({ where: { id: { in: childIds }, role: "user" }, data: { parentId: id } }),
+      // 原先绑定该家长但本次未选中的孩子解绑
+      prisma.user.updateMany({ where: { parentId: id, id: { notIn: childIds } }, data: { parentId: null } }),
+    ]);
+  }
+  if (!Object.keys(data).length && !Array.isArray(body.childIds)) {
     return NextResponse.json({ error: "没有可更新的字段" }, { status: 400 });
   }
-  await prisma.user.update({ where: { id }, data });
+  if (Object.keys(data).length) {
+    await prisma.user.update({ where: { id }, data });
+  }
   return NextResponse.json({ ok: true });
 }

@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isParent } from "@/lib/session";
 import { bookVisibleWhere } from "@/lib/book-access";
 
 // 自由练习：从学过的词里随机抽 20 个；没学过则抽全书随机
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const progresses = await prisma.wordProgress.findMany({
     where: { userId: user.id },

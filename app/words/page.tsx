@@ -39,6 +39,7 @@ export default function WordsIndex() {
   useEffect(() => {
     fetch("/api/auth/me").then(async (r) => {
       const d = await r.json();
+      if (d.user?.role === "parent") return router.replace("/parent");
       if (d.user?.role === "admin") setIsAdmin(true);
     });
   }, []);

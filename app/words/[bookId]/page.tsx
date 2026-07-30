@@ -40,6 +40,7 @@ export default function BookDetail({ params }: { params: Promise<{ bookId: strin
   function load() {
     fetch(`/api/books/${bookId}`).then(async (r) => {
       if (r.status === 401) return router.push("/login");
+      if (r.status === 403) return router.replace("/parent"); // 家长无学习权限
       const d = await r.json();
       setBook(d.book);
       setUnits(d.units);

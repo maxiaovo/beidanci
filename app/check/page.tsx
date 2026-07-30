@@ -63,6 +63,7 @@ function CheckInner() {
     if (isReview) {
       const r = await fetch("/api/session");
       if (r.status === 401) return router.push("/login");
+      if (r.status === 403) return router.replace("/parent"); // 家长无学习权限
       const d = await r.json();
       if (d.reviewsCleared) {
         setReviewCleared(true);
@@ -80,6 +81,7 @@ function CheckInner() {
     } else {
       const r = await fetch("/api/practice");
       if (r.status === 401) return router.push("/login");
+      if (r.status === 403) return router.replace("/parent"); // 家长无学习权限
       const d = await r.json();
       setWords(d.words);
       preloadAudio(d.words.map((w: QuizWord) => w.audioWord));
