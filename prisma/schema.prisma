@@ -22,6 +22,10 @@ model User {
   themePreset       String?  // 主题预设 id：purple | green | blue | warm | dark | custom
   themeCustom       String?  // JSON：{background, foreground, accent, accent2}
   highlightColor    String?  // 学习页高亮颜色（hex）
+  wordSize          String   @default("big") // 学习页单词字号：big | bigger | biggest
+  segmentSize       String   @default("big") // 词根词缀字号
+  sentenceSize      String   @default("big") // 例句字号
+  sentenceCnSize    String   @default("big") // 例句中文字号
   createdAt         DateTime @default(now())
 
   books       Book[]

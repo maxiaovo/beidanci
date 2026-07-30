@@ -202,6 +202,10 @@ export async function GET(req: Request) {
       defaultCheckMode: user.defaultCheckMode,
       allowSkipReview: await isAllowSkipReview(),
       highlightColor: user.highlightColor ?? null,
+      wordSize: user.wordSize,
+      segmentSize: user.segmentSize,
+      sentenceSize: user.sentenceSize,
+      sentenceCnSize: user.sentenceCnSize,
     },
   });
 }

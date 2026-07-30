@@ -38,37 +38,49 @@ const PREV_PHASE: Partial<Record<Phase, Phase>> = {
   traceEx2: "traceEx1",
 };
 
-// 卡片尺寸档位（localStorage("cardSize") 持久化，默认 big）
-type CardSize = "big" | "bigger" | "biggest";
+// 学习页字号档位（由管理员在后台按用户设置，/api/session 下发）
+type SizeLevel = "big" | "bigger" | "biggest";
 
-const CARD_SIZE_OPTIONS: { key: CardSize; label: string }[] = [
-  { key: "big", label: "大" },
-  { key: "bigger", label: "更大" },
-  { key: "biggest", label: "比大更大" },
-];
+const SIZE_LEVELS: SizeLevel[] = ["big", "bigger", "biggest"];
 
-const SIZE_CLASSES: Record<CardSize, { card: string; word: string; sentence: string; trace: string; traceEx: string }> = {
-  big: {
-    card: "min-h-[26rem]",
-    word: "text-6xl sm:text-8xl",
-    sentence: "text-2xl sm:text-3xl",
-    trace: "text-5xl sm:text-7xl",
-    traceEx: "text-2xl sm:text-4xl",
-  },
-  bigger: {
-    card: "min-h-[32rem]",
-    word: "text-7xl sm:text-9xl",
-    sentence: "text-3xl sm:text-4xl",
-    trace: "text-6xl sm:text-8xl",
-    traceEx: "text-3xl sm:text-5xl",
-  },
-  biggest: {
-    card: "min-h-[38rem]",
-    word: "text-8xl sm:text-[10rem]",
-    sentence: "text-4xl sm:text-5xl",
-    trace: "text-7xl sm:text-9xl",
-    traceEx: "text-4xl sm:text-6xl",
-  },
+function asSizeLevel(v: unknown): SizeLevel {
+  return SIZE_LEVELS.includes(v as SizeLevel) ? (v as SizeLevel) : "big";
+}
+
+const CARD_MIN_H: Record<SizeLevel, string> = {
+  big: "min-h-[26rem]",
+  bigger: "min-h-[32rem]",
+  biggest: "min-h-[38rem]",
+};
+
+const WORD_SIZE: Record<SizeLevel, string> = {
+  big: "text-6xl sm:text-8xl",
+  bigger: "text-7xl sm:text-9xl",
+  biggest: "text-8xl sm:text-[10rem]",
+};
+
+const SENTENCE_SIZE: Record<SizeLevel, string> = {
+  big: "text-2xl sm:text-3xl",
+  bigger: "text-3xl sm:text-4xl",
+  biggest: "text-4xl sm:text-5xl",
+};
+
+const SENTENCE_CN_SIZE: Record<SizeLevel, string> = {
+  big: "text-base",
+  bigger: "text-lg",
+  biggest: "text-2xl",
+};
+
+const TRACE_SIZE: Record<SizeLevel, string> = {
+  big: "text-5xl sm:text-7xl",
+  bigger: "text-6xl sm:text-8xl",
+  biggest: "text-7xl sm:text-9xl",
+};
+
+const TRACE_EX_SIZE: Record<SizeLevel, string> = {
+  big: "text-2xl sm:text-4xl",
+  bigger: "text-3xl sm:text-5xl",
+  biggest: "text-4xl sm:text-6xl",
 };
 
 export default function LearnPage() {
@@ -91,7 +103,7 @@ function LearnInner() {
   const [done, setDone] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [highlightColor, setHighlightColor] = useState<string | null>(null); // 例句目标词高亮颜色
-  const [cardSize, setCardSize] = useState<CardSize>("big"); // 首帧用默认"大"，挂载后读 localStorage
+  const [sizes, setSizes] = useState({ wordSize: "big", segmentSize: "big", sentenceSize: "big", sentenceCnSize: "big" } as { wordSize: SizeLevel; segmentSize: SizeLevel; sentenceSize: SizeLevel; sentenceCnSize: SizeLevel }); // 管理员配置的字号档位
   const [msgQueue, setMsgQueue] = useState<ParentMessage[]>([]); // 家长留言弹窗队列
   const shownMsgRef = useRef<Set<string>>(new Set()); // 本次会话已弹过的留言
   const wordMsgsRef = useRef<ParentMessage[]>([]); // word 触发的留言
@@ -101,19 +113,6 @@ function LearnInner() {
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
-  // 卡片尺寸：挂载后读 localStorage，避免水合不一致（异步应用，避开同步 setState-in-effect）
-  useEffect(() => {
-    const v = localStorage.getItem("cardSize");
-    if (v !== "bigger" && v !== "biggest") return;
-    const t = setTimeout(() => setCardSize(v), 0);
-    return () => clearTimeout(t);
-  }, []);
-
-  function changeCardSize(s: CardSize) {
-    setCardSize(s);
-    localStorage.setItem("cardSize", s);
-  }
-
   const loadSession = useCallback(() => {
     fetch(bookParam ? `/api/session?book=${encodeURIComponent(bookParam)}` : "/api/session").then(async (r) => {
       if (r.status === 401) return router.push("/login");
@@ -121,6 +120,12 @@ function LearnInner() {
       const d = await r.json();
       setAllowSkip(!!d.stats.allowSkipReview);
       setHighlightColor(d.stats.highlightColor ?? null);
+      setSizes({
+        wordSize: asSizeLevel(d.stats.wordSize),
+        segmentSize: asSizeLevel(d.stats.segmentSize),
+        sentenceSize: asSizeLevel(d.stats.sentenceSize),
+        sentenceCnSize: asSizeLevel(d.stats.sentenceCnSize),
+      });
       if (!d.reviewsCleared) {
         setBlocked(d.stats.dueCount);
       } else if (d.newWords.length === 0) {
@@ -333,32 +338,21 @@ function LearnInner() {
 
   if (!word) return null;
 
-  const sz = SIZE_CLASSES[cardSize];
+  const wordCls = WORD_SIZE[sizes.wordSize];
+  const sentenceCls = SENTENCE_SIZE[sizes.sentenceSize];
+  const sentenceCnCls = SENTENCE_CN_SIZE[sizes.sentenceCnSize];
 
   return (
     <div
-      className="max-w-4xl mx-auto p-4 sm:p-6 flex flex-col items-center gap-6 select-none"
+      className="max-w-6xl mx-auto p-4 sm:p-6 flex flex-col items-center gap-6 select-none"
       onClick={onTapNav}
     >
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
-      {/* 顶部进度 + 卡片尺寸档位 + 扩展模式开关 + 退出 */}
+      {/* 顶部进度 + 扩展模式开关 + 退出 */}
       <div className="w-full">
         <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-2 text-sm text-black/50">
           <span>{word.bookName} · {word.unitTitle}</span>
           <span>第 {idx + 1} / {words.length} 词</span>
-          <div className="flex items-center gap-1 bg-white/70 rounded-full px-1 py-0.5">
-            {CARD_SIZE_OPTIONS.map((o) => (
-              <button
-                key={o.key}
-                onClick={() => changeCardSize(o.key)}
-                className={`rounded-full px-2.5 py-0.5 cursor-pointer transition-colors ${
-                  cardSize === o.key ? "bg-foreground text-white" : "text-black/60 hover:text-black"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -379,12 +373,12 @@ function LearnInner() {
       </div>
 
       {/* 大卡片 */}
-      <div className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 ${sz.card} flex flex-col items-center justify-center gap-8`}>
+      <div className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 ${CARD_MIN_H[sizes.wordSize]} flex flex-col items-center justify-center gap-8`}>
         {phase === "show" && (
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className={`${sz.word} font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all`}
+              className={`${wordCls} font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all`}
               title="点击播放读音"
             >
               {word.text}
@@ -395,7 +389,7 @@ function LearnInner() {
 
         {phase === "segments" && (
           <>
-            <SegmentWord key={word.id} segments={word.segments} big={cardSize === "biggest"} />
+            <SegmentWord key={word.id} segments={word.segments} size={sizes.segmentSize} />
             <div className="text-center">
               <span className="text-black/40 mr-3">{word.phonetic}</span>
               <AudioButton file={word.audioWord} size="lg" />
@@ -411,15 +405,12 @@ function LearnInner() {
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className={`${sz.word} font-bold hover:opacity-70 cursor-pointer break-all`}
+              className={`${wordCls} font-bold hover:opacity-70 cursor-pointer break-all`}
             >
               {word.text}
             </button>
-            <div className="flex flex-col gap-6 max-w-2xl">
+            <div className="flex flex-col gap-6 w-full max-w-4xl">
               <div>
-                <div className="flex justify-center mb-1">
-                  <AudioButton file={word.audioEx1} size="sm" />
-                </div>
                 <button
                   onClick={() => playAudio(word.audioEx1)}
                   className={`w-full text-center cursor-pointer rounded-xl p-3 transition-colors ${
@@ -430,16 +421,13 @@ function LearnInner() {
                     sentence={word.example1}
                     word={word.text}
                     color={highlightColor}
-                    className={`block ${sz.sentence}`}
+                    className={`block ${sentenceCls}`}
                   />
-                  <div className="text-black/50 mt-1">{word.example1Cn}</div>
+                  <div className={`text-black/50 mt-1 ${sentenceCnCls}`}>{word.example1Cn}</div>
                 </button>
               </div>
               {phase === "ex2" && (
                 <div>
-                  <div className="flex justify-center mb-1">
-                    <AudioButton file={word.audioEx2} size="sm" />
-                  </div>
                   <button
                     onClick={() => playAudio(word.audioEx2)}
                     className="w-full text-center cursor-pointer rounded-xl p-3 bg-[#FFDAC1]/30"
@@ -448,9 +436,9 @@ function LearnInner() {
                       sentence={word.example2}
                       word={word.text}
                       color={highlightColor}
-                      className={`block ${sz.sentence}`}
+                      className={`block ${sentenceCls}`}
                     />
-                    <div className="text-black/50 mt-1">{word.example2Cn}</div>
+                    <div className={`text-black/50 mt-1 ${sentenceCnCls}`}>{word.example2Cn}</div>
                   </button>
                 </div>
               )}
@@ -461,21 +449,21 @@ function LearnInner() {
         {phase === "trace" && (
           <>
             <div className="text-black/40">{word.phonetic} · {word.meaningCn}</div>
-            <TypingTrainer target={word.text} onComplete={afterTrace} fontSize={sz.trace} />
+            <TypingTrainer target={word.text} onComplete={afterTrace} fontSize={TRACE_SIZE[sizes.wordSize]} />
           </>
         )}
 
         {phase === "traceEx1" && (
           <>
             <div className="text-black/50">抄写例句 1 / 2</div>
-            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSize={sz.traceEx} />
+            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSize={TRACE_EX_SIZE[sizes.sentenceSize]} />
           </>
         )}
 
         {phase === "traceEx2" && (
           <>
             <div className="text-black/50">抄写例句 2 / 2</div>
-            <TypingTrainer target={word.example2} onComplete={finishWord} fontSize={sz.traceEx} />
+            <TypingTrainer target={word.example2} onComplete={finishWord} fontSize={TRACE_EX_SIZE[sizes.sentenceSize]} />
           </>
         )}
       </div>

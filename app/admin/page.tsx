@@ -10,6 +10,10 @@ interface UserRow {
   parentId: string | null;
   avatarUrl: string | null;
   highlightColor: string | null;
+  wordSize: string;
+  segmentSize: string;
+  sentenceSize: string;
+  sentenceCnSize: string;
   dailyNewTarget: number;
   dailyReviewTarget: number;
   todayLogs: number;
@@ -135,6 +139,9 @@ export default function AdminPage() {
   const [saved, setSaved] = useState(false);
   const [hlColor, setHlColor] = useState("#e11d48");
   const [hlSaved, setHlSaved] = useState(false);
+  // 学习页字号档位（big | bigger | biggest）
+  const [fontSizes, setFontSizes] = useState({ wordSize: "big", segmentSize: "big", sentenceSize: "big", sentenceCnSize: "big" });
+  const [fsSaved, setFsSaved] = useState(false);
   const [regOpen, setRegOpen] = useState(true);
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -676,6 +683,7 @@ export default function AdminPage() {
     setNewTarget(u.dailyNewTarget);
     setReviewTarget(u.dailyReviewTarget);
     setHlColor(u.highlightColor ?? "#e11d48");
+    setFontSizes({ wordSize: u.wordSize, segmentSize: u.segmentSize, sentenceSize: u.sentenceSize, sentenceCnSize: u.sentenceCnSize });
     setResetPwd("");
     setResetMsg("");
     setBindMsg("");
@@ -729,6 +737,22 @@ export default function AdminPage() {
       setSelected({ ...selected, highlightColor: next });
       setHlSaved(true);
       setTimeout(() => setHlSaved(false), 2000);
+      load();
+    }
+  }
+
+  // 保存学习页字号档位
+  async function saveFontSizes() {
+    if (!selected) return;
+    const r = await fetch(`/api/admin/users/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fontSizes),
+    });
+    if (r.ok) {
+      setSelected({ ...selected, ...fontSizes });
+      setFsSaved(true);
+      setTimeout(() => setFsSaved(false), 2000);
       load();
     }
   }
@@ -944,6 +968,42 @@ export default function AdminPage() {
                       清除
                     </button>
                   </div>
+                </div>
+                <h2 className="font-bold mt-5 mb-3">学习页字体大小</h2>
+                <div className="flex flex-col gap-3">
+                  {([
+                    { key: "wordSize", label: "单词大小" },
+                    { key: "segmentSize", label: "词根词缀大小" },
+                    { key: "sentenceSize", label: "例句大小" },
+                    { key: "sentenceCnSize", label: "例句中文大小" },
+                  ] as const).map((row) => (
+                    <div key={row.key} className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-black/60">{row.label}</span>
+                      <div className="flex items-center gap-1 bg-black/5 rounded-full px-1 py-0.5 text-sm">
+                        {([
+                          { v: "big", label: "大" },
+                          { v: "bigger", label: "更大" },
+                          { v: "biggest", label: "比大更大" },
+                        ] as const).map((o) => (
+                          <button
+                            key={o.v}
+                            onClick={() => setFontSizes({ ...fontSizes, [row.key]: o.v })}
+                            className={`rounded-full px-2.5 py-0.5 cursor-pointer transition-colors ${
+                              fontSizes[row.key] === o.v ? "bg-foreground text-white" : "text-black/60 hover:text-black"
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    onClick={saveFontSizes}
+                    className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
+                  >
+                    {fsSaved ? "✓ 已保存" : "保存"}
+                  </button>
                 </div>
               </>
             )}

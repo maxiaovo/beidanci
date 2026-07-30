@@ -62,6 +62,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     data.highlightColor = body.highlightColor;
   }
+  // 学习页字号档位：big | bigger | biggest
+  const SIZE_LEVELS = ["big", "bigger", "biggest"];
+  for (const k of ["wordSize", "segmentSize", "sentenceSize", "sentenceCnSize"] as const) {
+    if (typeof body[k] === "string") {
+      if (!SIZE_LEVELS.includes(body[k])) {
+        return NextResponse.json({ error: "字号档位错误（应为 big | bigger | biggest）" }, { status: 400 });
+      }
+      data[k] = body[k];
+    }
+  }
   // 重置密码
   if (typeof body.newPassword === "string") {
     if (body.newPassword.length < 4) {
