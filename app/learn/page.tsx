@@ -6,7 +6,7 @@ import Link from "next/link";
 import SegmentWord from "@/components/SegmentWord";
 import TypingTrainer from "@/components/TypingTrainer";
 import AudioButton from "@/components/AudioButton";
-import { playAudio, postProgress, StudyWord } from "@/lib/client";
+import { playAudio, preloadAudio, postProgress, StudyWord } from "@/lib/client";
 
 type Phase = "show" | "segments" | "ex1" | "ex2" | "trace" | "traceEx1" | "traceEx2";
 
@@ -55,6 +55,7 @@ export default function LearnPage() {
         setDone(true);
       } else {
         setWords(d.newWords);
+        preloadAudio(d.newWords.flatMap((w: StudyWord) => [w.audioWord, w.audioEx1, w.audioEx2]));
       }
       setLoaded(true);
     });
@@ -205,7 +206,7 @@ export default function LearnPage() {
 
         {phase === "segments" && (
           <>
-            <SegmentWord segments={word.segments} />
+            <SegmentWord key={word.id} segments={word.segments} />
             <div className="text-center">
               <span className="text-black/40 mr-3">{word.phonetic}</span>
               <AudioButton file={word.audioWord} size="lg" />

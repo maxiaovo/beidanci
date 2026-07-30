@@ -109,11 +109,24 @@ export interface TTSConfig {
   prompt: string;
   qwenMode: string;
   qwenVoice: string; // clone: 音色名；custom: 预设说话人
+  qwenVoices: string[]; // 音色池：非空时每次合成随机抽取一个（避免单调），空则固定用 qwenVoice
   qwenInstruct: string; // clone: 情绪注入（可空）；design: 音色描述（必填）
   qwenLanguage: string;
   qwenTemperature: string;
   qwenMaxTokens: string;
   overridden: Record<string, boolean>;
+}
+
+// 音色池存为 JSON 数组字符串；解析失败或为空时返回 []
+function parseVoicePool(raw: string | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((v): v is string => typeof v === "string" && !!v.trim()).map((v) => v.trim());
+  } catch {
+    return [];
+  }
 }
 
 export async function getTTSConfig(): Promise<TTSConfig> {
@@ -127,6 +140,7 @@ export async function getTTSConfig(): Promise<TTSConfig> {
     "tts_prompt",
     "tts_qwen_mode",
     "tts_qwen_voice",
+    "tts_qwen_voices",
     "tts_qwen_instruct",
     "tts_qwen_language",
     "tts_qwen_temperature",
@@ -149,6 +163,7 @@ export async function getTTSConfig(): Promise<TTSConfig> {
     prompt: s.tts_prompt || process.env.MIMO_TTS_PROMPT || DEFAULT_TTS_PROMPT,
     qwenMode: s.tts_qwen_mode || process.env.QWEN_TTS_MODE || DEFAULT_QWEN_MODE,
     qwenVoice: s.tts_qwen_voice || process.env.QWEN_TTS_VOICE || DEFAULT_QWEN_VOICE,
+    qwenVoices: parseVoicePool(s.tts_qwen_voices),
     qwenInstruct: s.tts_qwen_instruct || process.env.QWEN_TTS_INSTRUCT || "",
     qwenLanguage: s.tts_qwen_language || process.env.QWEN_TTS_LANGUAGE || DEFAULT_QWEN_LANGUAGE,
     qwenTemperature: s.tts_qwen_temperature || process.env.QWEN_TTS_TEMPERATURE || "0",
@@ -163,6 +178,7 @@ export async function getTTSConfig(): Promise<TTSConfig> {
       prompt: !!s.tts_prompt,
       qwenMode: !!s.tts_qwen_mode,
       qwenVoice: !!s.tts_qwen_voice,
+      qwenVoices: !!s.tts_qwen_voices,
       qwenInstruct: !!s.tts_qwen_instruct,
       qwenLanguage: !!s.tts_qwen_language,
       qwenTemperature: !!s.tts_qwen_temperature,

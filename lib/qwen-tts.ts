@@ -2,8 +2,17 @@
 // 接口说明见 API_FOR_KIMI.md；合成约实时级耗时，超时给足 300s
 import type { TTSConfig } from "./settings";
 
-export async function synthesizeQwen(cfg: TTSConfig, text: string): Promise<Buffer | null> {
+// 从音色池随机抽取一个音色；池为空时回落到固定配置的 qwenVoice
+export function pickQwenVoice(cfg: TTSConfig): string {
+  if (cfg.qwenVoices.length > 0) {
+    return cfg.qwenVoices[Math.floor(Math.random() * cfg.qwenVoices.length)];
+  }
+  return cfg.qwenVoice;
+}
+
+export async function synthesizeQwen(cfg: TTSConfig, text: string, voiceOverride?: string): Promise<Buffer | null> {
   const url = `${cfg.baseUrl}/api/v1/tts`;
+  const picked = voiceOverride ?? pickQwenVoice(cfg);
   const body: Record<string, unknown> = {
     mode: cfg.qwenMode,
     text,
@@ -13,10 +22,10 @@ export async function synthesizeQwen(cfg: TTSConfig, text: string): Promise<Buff
     return_format: "wav",
   };
   if (cfg.qwenMode === "clone") {
-    body.voice = cfg.qwenVoice;
+    body.voice = picked;
     if (cfg.qwenInstruct) body.instruct = cfg.qwenInstruct; // clone 模式 instruct = 情绪注入
   } else if (cfg.qwenMode === "custom") {
-    body.speaker = cfg.qwenVoice;
+    body.speaker = picked;
   } else {
     body.instruct = cfg.qwenInstruct; // design 模式 instruct = 音色描述（必填）
   }

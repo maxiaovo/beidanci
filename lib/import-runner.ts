@@ -154,16 +154,17 @@ async function runImport(bookId: string, units: RawUnit[]) {
     logImportEvent({ kind: "info", bookId, text: `开始生成音频，共 ${allWords.length * 3} 条` });
     for (const w of allWords) {
       if (isStopped(bookId)) throw new Stopped();
-      const audioWord = await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic });
-      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音`, ok: !!audioWord });
+      const out: { voice?: string } = {};
+      const audioWord = await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic, out });
+      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音${voiceTag(out)}`, ok: !!audioWord });
       done++;
       if (isStopped(bookId)) throw new Stopped();
-      const audioEx1 = await synthesize(w.example1, `${w.id}_ex1.wav`);
-      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句1：${w.example1.slice(0, 60)}`, ok: !!audioEx1 });
+      const audioEx1 = await synthesize(w.example1, `${w.id}_ex1.wav`, { out });
+      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句1${voiceTag(out)}：${w.example1.slice(0, 60)}`, ok: !!audioEx1 });
       done++;
       if (isStopped(bookId)) throw new Stopped();
-      const audioEx2 = await synthesize(w.example2, `${w.id}_ex2.wav`);
-      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句2：${w.example2.slice(0, 60)}`, ok: !!audioEx2 });
+      const audioEx2 = await synthesize(w.example2, `${w.id}_ex2.wav`, { out });
+      logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句2${voiceTag(out)}：${w.example2.slice(0, 60)}`, ok: !!audioEx2 });
       done++;
       await prisma.word.update({
         where: { id: w.id },
@@ -191,6 +192,11 @@ class Stopped extends Error {
   constructor() {
     super("导入已被用户停止");
   }
+}
+
+// 日志中标注本次合成使用的音色（qwen 音色池随机抽取时可见）
+function voiceTag(out: { voice?: string }): string {
+  return out.voice ? `（${out.voice}）` : "";
 }
 
 // 补生成缺失音频（可后续手动触发）

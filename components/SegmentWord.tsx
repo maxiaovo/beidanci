@@ -2,26 +2,35 @@
 
 import { MACARON, Segment } from "@/lib/client";
 
-// 词根词缀分开展示：马卡龙配色 + 缓缓分开动画 + 每段中文释义
+// 词根词缀拆开动画：先呈现完整单词（各段紧贴、无底色），随后各段缓缓分开，
+// 马卡龙底色淡入以区分词根词缀，最后浮现每段的中文释义
 export default function SegmentWord({ segments, big = true }: { segments: Segment[]; big?: boolean }) {
   return (
-    <div className="flex items-start justify-center gap-3 flex-wrap">
+    <div className="segment-split flex items-start justify-center flex-wrap">
       {segments.map((s, i) => (
-        <div
-          key={i}
-          className="segment-part flex flex-col items-center"
-          style={{ animationDelay: `${i * 0.25}s` }}
-        >
+        <div key={i} className="flex flex-col items-center">
           <span
-            className={`rounded-2xl px-4 py-2 font-bold tracking-wide ${
+            className={`segment-split-part rounded-2xl py-2 font-bold tracking-wide ${
               big ? "text-5xl" : "text-2xl"
             }`}
-            style={{ background: MACARON[i % MACARON.length] }}
+            style={
+              {
+                background: MACARON[i % MACARON.length],
+                "--seg-bg": MACARON[i % MACARON.length],
+                // 各段错峰拆开（fill backwards 保证延迟期间仍贴合为完整单词）
+                animationDelay: `${i * 0.15}s`,
+              } as React.CSSProperties
+            }
           >
             {s.part}
           </span>
-          <span className="mt-2 text-sm text-black/60 max-w-32 text-center">{s.meaningCn}</span>
-          <span className="text-xs text-black/30">
+          <span
+            className="segment-split-label mt-2 text-sm text-black/60 max-w-32 text-center"
+            style={{ animationDelay: `${1 + i * 0.15}s` }}
+          >
+            {s.meaningCn}
+          </span>
+          <span className="segment-split-label text-xs text-black/30" style={{ animationDelay: `${1 + i * 0.15}s` }}>
             {s.type === "prefix" ? "前缀" : s.type === "root" ? "词根" : s.type === "suffix" ? "后缀" : ""}
           </span>
         </div>

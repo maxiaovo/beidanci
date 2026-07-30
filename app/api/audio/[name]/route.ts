@@ -19,6 +19,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ name: s
   }
   const buf = fs.readFileSync(filePath);
   return new NextResponse(new Uint8Array(buf), {
-    headers: { "Content-Type": "audio/wav", "Cache-Control": "private, max-age=86400" },
+    // URL 带 ?v= 版本号（lib/client.ts 的 AUDIO_VERSION），内容变更时版本号递增，故可永久缓存
+    headers: { "Content-Type": "audio/wav", "Cache-Control": "private, max-age=31536000, immutable" },
   });
 }

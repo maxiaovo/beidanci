@@ -71,6 +71,11 @@ export async function PATCH(req: Request) {
       await setSetting(settingKey, body[bodyKey].trim());
     }
   }
+  // qwen 音色池：字符串数组，存为 JSON；导入音频时从中随机抽取音色
+  if (Array.isArray(body.ttsQwenVoices)) {
+    const pool = body.ttsQwenVoices.filter((v: unknown) => typeof v === "string" && (v as string).trim());
+    await setSetting("tts_qwen_voices", JSON.stringify(pool));
+  }
   if (typeof body.aiThinking === "boolean") {
     await setSetting("ai_thinking", body.aiThinking ? "true" : "false");
   }

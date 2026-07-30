@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { playAudio, playDing, playBuzz, postProgress } from "@/lib/client";
+import { playAudio, playDing, playBuzz, postProgress, preloadAudio } from "@/lib/client";
 
 interface QuizWord {
   id: string;
@@ -68,6 +68,7 @@ function CheckInner() {
         setReviewCleared(true);
       } else {
         setWords(d.reviews);
+        preloadAudio(d.reviews.map((w: QuizWord) => w.audioWord));
         setQuizMode(isStrict ? "spell" : (d.stats.defaultCheckMode as QuizMode));
         // 选择题干扰项
         const p = await fetch("/api/practice");
@@ -81,6 +82,7 @@ function CheckInner() {
       if (r.status === 401) return router.push("/login");
       const d = await r.json();
       setWords(d.words);
+      preloadAudio(d.words.map((w: QuizWord) => w.audioWord));
       setDistractors(d.distractors);
       // 强检查：跳过模式选择，每个词依次做拼写 + 选择
       if (isStrict) setQuizMode("spell");

@@ -57,6 +57,7 @@ interface TTSSettings {
   prompt: string;
   qwenMode: string;
   qwenVoice: string;
+  qwenVoices: string[]; // 音色池：勾选多个后导入时随机使用
   qwenInstruct: string;
   qwenLanguage: string;
   qwenTemperature: string;
@@ -138,6 +139,12 @@ export default function AdminPage() {
   const [aiMsg, setAiMsg] = useState("");
   const [tts, setTts] = useState<TTSSettings | null>(null);
   const [ttsMsg, setTtsMsg] = useState("");
+  // qwen 音色池：从服务拉取的可用音色 + 试听状态
+  const [voicePool, setVoicePool] = useState<{ voices: string[]; speakers: string[] } | null>(null);
+  const [voicesLoading, setVoicesLoading] = useState(false);
+  const [voiceMsg, setVoiceMsg] = useState("");
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [audioWords, setAudioWords] = useState<AudioWord[] | null>(null);
   const [audioFilter, setAudioFilter] = useState("");
   const [regenBusy, setRegenBusy] = useState<Record<string, boolean>>({});
@@ -242,6 +249,7 @@ export default function AdminPage() {
         ttsPrompt: tts.prompt,
         ttsQwenMode: tts.qwenMode,
         ttsQwenVoice: tts.qwenVoice,
+        ttsQwenVoices: tts.qwenVoices,
         ttsQwenInstruct: tts.qwenInstruct,
         ttsQwenLanguage: tts.qwenLanguage,
         ttsQwenTemperature: tts.qwenTemperature,
@@ -256,6 +264,78 @@ export default function AdminPage() {
       setTtsMsg(d.error || "保存失败");
     }
     setTimeout(() => setTtsMsg(""), 3000);
+  }
+
+  // 从 Qwen3-TTS 服务拉取可用音色列表（按面板当前 Base URL / Token，可不先保存）
+  async function fetchVoiceList() {
+    if (!tts) return;
+    setVoicesLoading(true);
+    setVoiceMsg("");
+    try {
+      const r = await fetch("/api/admin/tts-voices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl: tts.baseUrl, apiKey: tts.apiKey }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setVoiceMsg(d.error || "获取音色列表失败");
+        setVoicePool(null);
+      } else {
+        setVoicePool({ voices: d.voices ?? [], speakers: d.speakers ?? [] });
+      }
+    } catch {
+      setVoiceMsg("获取音色列表失败");
+      setVoicePool(null);
+    }
+    setVoicesLoading(false);
+  }
+
+  // 试听某个音色：用面板当前（可未保存）的语调设置现场合成样例并播放
+  async function previewVoice(name: string, kind: "word" | "sentence") {
+    if (!tts || previewKey) return;
+    const key = `${name}:${kind}`;
+    setPreviewKey(key);
+    setVoiceMsg("");
+    try {
+      const r = await fetch("/api/admin/tts-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseUrl: tts.baseUrl,
+          apiKey: tts.apiKey,
+          mode: tts.qwenMode,
+          voice: name,
+          instruct: tts.qwenInstruct,
+          language: tts.qwenLanguage,
+          temperature: tts.qwenTemperature,
+          kind,
+        }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setVoiceMsg(d.error || "试听合成失败");
+        return;
+      }
+      const url = URL.createObjectURL(await r.blob());
+      previewAudioRef.current?.pause();
+      const a = new Audio(url);
+      previewAudioRef.current = a;
+      await a.play().catch(() => {});
+    } catch {
+      setVoiceMsg("试听合成失败");
+    } finally {
+      setPreviewKey(null);
+    }
+  }
+
+  // 勾选 / 取消勾选音色池中的音色
+  function togglePoolVoice(name: string) {
+    if (!tts) return;
+    const set = new Set(tts.qwenVoices);
+    if (set.has(name)) set.delete(name);
+    else set.add(name);
+    setTts({ ...tts, qwenVoices: [...set] });
   }
 
   // 播放音频（加时间戳避免重新生成后命中浏览器缓存）
@@ -1074,7 +1154,7 @@ export default function AdminPage() {
                   </label>
                 </div>
                 <label className="text-sm text-black/60">
-                  instruct（clone：情绪注入，可留空；design：音色描述，必填）
+                  instruct（语音语调：clone 为情绪注入，可留空；design 为音色描述，必填）
                   <textarea
                     value={tts.qwenInstruct}
                     onChange={(e) => setTts({ ...tts, qwenInstruct: e.target.value })}
@@ -1083,6 +1163,94 @@ export default function AdminPage() {
                     placeholder="留空 = 自然朗读"
                   />
                 </label>
+                <div className="flex gap-2 flex-wrap -mt-2">
+                  <span className="text-xs text-black/40 py-1">快捷语调：</span>
+                  {[
+                    { label: "自然朗读", value: "" },
+                    { label: "活泼亲切", value: "用活泼亲切的语气朗读" },
+                    { label: "缓慢清晰", value: "用缓慢清晰的语气朗读，适合语言初学者" },
+                    { label: "兴奋高昂", value: "用兴奋高昂的语气朗读" },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      onClick={() => setTts({ ...tts, qwenInstruct: p.value })}
+                      className={`text-xs rounded-full px-3 py-1 border ${
+                        tts.qwenInstruct === p.value
+                          ? "border-accent bg-accent/10"
+                          : "border-black/15 hover:bg-black/5"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {/* 音色池：试听 + 勾选多个随机使用 */}
+                {tts.qwenMode !== "design" && (
+                  <div className="border border-black/10 rounded-xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="text-sm text-black/60">
+                        音色池：勾选多个后，生成音频时随机使用选中的音色朗读单词和例句，避免单调；一个都不勾则固定用上面的音色
+                      </div>
+                      <button
+                        onClick={fetchVoiceList}
+                        disabled={voicesLoading}
+                        className="border border-black/15 rounded-lg px-3 py-1.5 text-sm hover:bg-black/5 disabled:opacity-50 shrink-0"
+                      >
+                        {voicesLoading ? "获取中…" : voicePool ? "刷新音色列表" : "获取音色列表"}
+                      </button>
+                    </div>
+                    {voiceMsg && <div className="text-sm text-red-500">{voiceMsg}</div>}
+                    {voicePool && (
+                      <div className="flex flex-col">
+                        {(tts.qwenMode === "custom" ? voicePool.speakers : voicePool.voices).map((name) => {
+                          const checked = tts.qwenVoices.includes(name);
+                          const busyWord = previewKey === `${name}:word`;
+                          const busySentence = previewKey === `${name}:sentence`;
+                          return (
+                            <div
+                              key={name}
+                              className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${checked ? "bg-accent/10" : ""}`}
+                            >
+                              <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm font-mono min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => togglePoolVoice(name)}
+                                  className="accent-foreground shrink-0"
+                                />
+                                <span className="truncate">{name}</span>
+                              </label>
+                              <button
+                                onClick={() => previewVoice(name, "word")}
+                                disabled={!!previewKey}
+                                className="text-xs border border-black/15 rounded-lg px-2 py-1 hover:bg-black/5 disabled:opacity-50 shrink-0"
+                                title="试听单词朗读"
+                              >
+                                {busyWord ? "合成中…" : "▶ 单词"}
+                              </button>
+                              <button
+                                onClick={() => previewVoice(name, "sentence")}
+                                disabled={!!previewKey}
+                                className="text-xs border border-black/15 rounded-lg px-2 py-1 hover:bg-black/5 disabled:opacity-50 shrink-0"
+                                title="试听例句朗读"
+                              >
+                                {busySentence ? "合成中…" : "▶ 例句"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {(tts.qwenMode === "custom" ? voicePool.speakers : voicePool.voices).length === 0 && (
+                          <div className="text-sm text-black/40 px-2">该模式下服务未返回可用音色</div>
+                        )}
+                      </div>
+                    )}
+                    {tts.qwenVoices.length > 0 && (
+                      <div className="text-xs text-black/40">
+                        已选 {tts.qwenVoices.length} 个：{tts.qwenVoices.join("、")}（保存后生效）
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <>
