@@ -31,8 +31,10 @@ export async function POST(req: Request) {
     }
     const voicesJson = await voicesRes.json();
     const speakersJson = await speakersRes.json();
-    const voices = (voicesJson.voices ?? []).map((v: { name?: string }) => v.name).filter(Boolean);
-    const speakers = (speakersJson.speakers ?? []).map((v: { name?: string }) => v.name).filter(Boolean);
+    // 同一说话人可能按语言返回多条（如 Vivian English/Chinese），按名字去重
+    const dedupe = (arr: unknown[]) => [...new Set(arr.filter((v): v is string => typeof v === "string" && !!v))];
+    const voices = dedupe((voicesJson.voices ?? []).map((v: { name?: string }) => v.name));
+    const speakers = dedupe((speakersJson.speakers ?? []).map((v: { name?: string }) => v.name));
     return NextResponse.json({ ok: true, voices, speakers });
   } catch {
     return NextResponse.json(

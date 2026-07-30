@@ -299,30 +299,34 @@ export default function AdminPage() {
   async function saveTTS() {
     if (!tts) return;
     setTtsMsg("");
-    const r = await fetch("/api/admin/config", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ttsBaseUrl: tts.baseUrl,
-        ttsApiKey: tts.apiKey,
-        ttsQwenMode: tts.qwenMode,
-        ttsQwenVoice: tts.qwenVoice,
-        ttsQwenVoices: tts.qwenVoices,
-        ttsQwenInstruct: tts.qwenInstruct,
-        ttsQwenLanguage: tts.qwenLanguage,
-        ttsQwenTemperature: tts.qwenTemperature,
-        ttsQwenMaxTokens: tts.qwenMaxTokens,
-      }),
-    });
-    const d = await r.json();
-    if (r.ok) {
-      setTts(d.tts);
-      setTtsMsg("✓ 已保存，立即生效");
-      checkTtsHealth(d.tts);
-    } else {
-      setTtsMsg(d.error || "保存失败");
+    try {
+      const r = await fetch("/api/admin/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ttsBaseUrl: tts.baseUrl,
+          ttsApiKey: tts.apiKey,
+          ttsQwenMode: tts.qwenMode,
+          ttsQwenVoice: tts.qwenVoice,
+          ttsQwenVoices: tts.qwenVoices,
+          ttsQwenInstruct: tts.qwenInstruct,
+          ttsQwenLanguage: tts.qwenLanguage,
+          ttsQwenTemperature: tts.qwenTemperature,
+          ttsQwenMaxTokens: tts.qwenMaxTokens,
+        }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setTts(d.tts);
+        setTtsMsg("✓ 已保存，立即生效");
+        checkTtsHealth(d.tts);
+      } else {
+        setTtsMsg(d.error || `保存失败（HTTP ${r.status}）`);
+      }
+    } catch {
+      setTtsMsg("保存失败：网络错误，请重试");
     }
-    setTimeout(() => setTtsMsg(""), 3000);
+    setTimeout(() => setTtsMsg(""), 5000);
   }
 
   // 从 Qwen3-TTS 服务拉取可用音色列表（按面板当前 Base URL / Token，可不先保存）
@@ -1578,12 +1582,19 @@ export default function AdminPage() {
                   </div>
                 )}
               </>
-            <button
-              onClick={saveTTS}
-              className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
-            >
-              保存 TTS 设置
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={saveTTS}
+                className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
+              >
+                保存 TTS 设置
+              </button>
+              {ttsMsg && (
+                <span className={`text-sm ${ttsMsg.startsWith("✓") ? "text-green-600" : "text-red-500"}`}>
+                  {ttsMsg}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-black/40">
               保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。TTS 指向本地 Qwen3-TTS 服务（默认 http://localhost:8765），服务器需能访问该地址才能在线生成。
             </p>
