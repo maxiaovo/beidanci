@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { playGua } from "@/lib/client";
+import { clampPx } from "@/lib/appearance";
 
 // 容易输入的 ASCII 标点/空格；字母、数字以及这些之外的字符视为"难打符号"
 const EASY_CHARS = new Set(" .,;:'\"?!()-/&@#%$*+=<>[]{}\\|_^".split(""));
@@ -15,12 +16,12 @@ function isHardChar(c: string) {
 export default function TypingTrainer({
   target,
   onComplete,
-  fontSize = "text-5xl",
+  fontSizePx = 72,
   placeholder = "开始输入…",
 }: {
   target: string;
   onComplete: () => void;
-  fontSize?: string;
+  fontSizePx?: number;
   placeholder?: string;
 }) {
   const [typed, setTyped] = useState<string>("");
@@ -101,7 +102,8 @@ export default function TypingTrainer({
     <div className="flex flex-col items-center gap-4">
       <div
         key={shake}
-        className={`${shake > 0 ? "animate-shake" : ""} ${fontSize} font-mono font-bold leading-relaxed tracking-wider text-center max-w-3xl flex flex-wrap justify-center`}
+        className={`${shake > 0 ? "animate-shake" : ""} font-mono font-bold leading-relaxed tracking-wider text-center max-w-3xl flex flex-wrap justify-center`}
+        style={{ fontSize: clampPx(fontSizePx) }}
       >
         {target.split("").map((c, i) => {
           let cls = "text-black/15"; // 未输入：浅灰

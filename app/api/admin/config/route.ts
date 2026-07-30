@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/session";
-import { getAIConfig, getTTSConfig, getSiteTitle, isRegistrationOpen, isStrictCheck, isAllowSkipReview, setSetting } from "@/lib/settings";
+import { getAIConfig, getTTSConfig, getSiteTitle, isRegistrationOpen, isStrictCheck, isAllowSkipReview, getLearnAppearance, setSetting, APPEARANCE_SETTING_KEYS, type LearnAppearance } from "@/lib/settings";
+import { clampAppearanceValue } from "@/lib/appearance";
 import { findSiteIcon } from "@/lib/site";
 
 // 管理员站点配置：注册开关 + 站点信息 + 强检查 + AI 解析配置 + TTS 语音配置
@@ -17,6 +18,7 @@ export async function GET() {
     allowSkipReview: await isAllowSkipReview(),
     siteTitle: await getSiteTitle(),
     hasSiteIcon: !!findSiteIcon(),
+    learnAppearance: await getLearnAppearance(),
     ai: {
       model: ai.model,
       baseUrl: ai.baseUrl,
@@ -79,6 +81,16 @@ export async function PATCH(req: Request) {
     await setSetting("ai_thinking", body.aiThinking ? "true" : "false");
   }
 
+  // 学习页外观：数值字段取整并夹取到合法范围后存 Setting 表
+  if (body.learnAppearance && typeof body.learnAppearance === "object") {
+    for (const [field, settingKey] of Object.entries(APPEARANCE_SETTING_KEYS) as [keyof LearnAppearance, string][]) {
+      const v = body.learnAppearance[field];
+      if (typeof v === "number" && Number.isFinite(v)) {
+        await setSetting(settingKey, String(clampAppearanceValue(field, v)));
+      }
+    }
+  }
+
   const [ai, tts] = await Promise.all([getAIConfig(), getTTSConfig()]);
   return NextResponse.json({
     ok: true,
@@ -87,6 +99,7 @@ export async function PATCH(req: Request) {
     allowSkipReview: await isAllowSkipReview(),
     siteTitle: await getSiteTitle(),
     hasSiteIcon: !!findSiteIcon(),
+    learnAppearance: await getLearnAppearance(),
     ai: {
       model: ai.model,
       baseUrl: ai.baseUrl,

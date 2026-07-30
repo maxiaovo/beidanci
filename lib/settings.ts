@@ -1,5 +1,12 @@
 // 站点级设置（存 Setting 表）
 import { prisma } from "./db";
+import {
+  DEFAULT_APPEARANCE,
+  clampAppearanceValue,
+  type LearnAppearance,
+} from "./appearance";
+
+export type { LearnAppearance };
 
 export async function getSetting(key: string, fallback = ""): Promise<string> {
   const row = await prisma.setting.findUnique({ where: { key } });
@@ -26,6 +33,27 @@ export async function isStrictCheck(): Promise<boolean> {
 // 允许跳过复习：开启后学习者可跳过当天复习门禁（留痕给管理员看）
 export async function isAllowSkipReview(): Promise<boolean> {
   return (await getSetting("allow_skip_review", "false")) === "true";
+}
+
+// ---- 学习页外观（全局，管理员统一配置；字段定义见 lib/appearance.ts）----
+// learnAppearance 各字段对应的 Setting 表 key
+export const APPEARANCE_SETTING_KEYS: Record<keyof LearnAppearance, string> = {
+  wordSizePx: "learn_word_size_px",
+  segmentSizePx: "learn_segment_size_px",
+  sentenceSizePx: "learn_sentence_size_px",
+  sentenceCnSizePx: "learn_sentence_cn_size_px",
+  cardWidthPct: "learn_card_width_pct",
+};
+
+export async function getLearnAppearance(): Promise<LearnAppearance> {
+  const keys = Object.values(APPEARANCE_SETTING_KEYS);
+  const rows = await prisma.setting.findMany({ where: { key: { in: keys } } });
+  const s = Object.fromEntries(rows.map((r) => [r.key, r.value as string]));
+  const out = { ...DEFAULT_APPEARANCE };
+  for (const [field, settingKey] of Object.entries(APPEARANCE_SETTING_KEYS) as [keyof LearnAppearance, string][]) {
+    out[field] = clampAppearanceValue(field, s[settingKey]);
+  }
+  return out;
 }
 
 // ---- 站点信息 ----

@@ -16,18 +16,20 @@ export default function HighlightedSentence({
   word,
   color,
   className,
+  style,
 }: {
   sentence: string;
   word: string;
   color?: string | null;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   const range = findRange(sentence, word);
-  if (!range) return <span className={className}>{sentence}</span>;
+  if (!range) return <span className={className} style={style}>{sentence}</span>;
   const [start, end] = range;
   const matched = sentence.slice(start, end);
   return (
-    <span className={className}>
+    <span className={className} style={style}>
       {sentence.slice(0, start)}
       {color ? (
         <span style={{ color }} className="font-bold">

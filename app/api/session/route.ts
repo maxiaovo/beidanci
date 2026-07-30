@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser, isParent } from "@/lib/session";
 import { bookVisibleWhere } from "@/lib/book-access";
-import { isAllowSkipReview } from "@/lib/settings";
+import { isAllowSkipReview, getLearnAppearance } from "@/lib/settings";
 
 function todayStart(): Date {
   const d = new Date();
@@ -193,6 +193,7 @@ export async function GET(req: Request) {
     reviews,
     newWords,
     plans: plansOut,
+    appearance: await getLearnAppearance(), // 学习页外观（全局设置）
     stats: {
       dueCount: reviews.length,
       reviewsDoneToday,
@@ -202,10 +203,6 @@ export async function GET(req: Request) {
       defaultCheckMode: user.defaultCheckMode,
       allowSkipReview: await isAllowSkipReview(),
       highlightColor: user.highlightColor ?? null,
-      wordSize: user.wordSize,
-      segmentSize: user.segmentSize,
-      sentenceSize: user.sentenceSize,
-      sentenceCnSize: user.sentenceCnSize,
     },
   });
 }

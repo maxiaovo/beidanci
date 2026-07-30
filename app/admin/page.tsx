@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import SegmentWord from "@/components/SegmentWord";
+import { APPEARANCE_RANGES, DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appearance";
 
 interface UserRow {
   id: string;
@@ -10,10 +12,6 @@ interface UserRow {
   parentId: string | null;
   avatarUrl: string | null;
   highlightColor: string | null;
-  wordSize: string;
-  segmentSize: string;
-  sentenceSize: string;
-  sentenceCnSize: string;
   dailyNewTarget: number;
   dailyReviewTarget: number;
   todayLogs: number;
@@ -130,6 +128,7 @@ const RESULT_LABEL: Record<string, string> = {
 };
 
 export default function AdminPage() {
+  const [tab, setTab] = useState<"manage" | "settings">("manage"); // 页签：管理 / 设置
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [selected, setSelected] = useState<UserRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
@@ -139,9 +138,9 @@ export default function AdminPage() {
   const [saved, setSaved] = useState(false);
   const [hlColor, setHlColor] = useState("#e11d48");
   const [hlSaved, setHlSaved] = useState(false);
-  // 学习页字号档位（big | bigger | biggest）
-  const [fontSizes, setFontSizes] = useState({ wordSize: "big", segmentSize: "big", sentenceSize: "big", sentenceCnSize: "big" });
-  const [fsSaved, setFsSaved] = useState(false);
+  // 学习页外观（全局设置，Setting 表）
+  const [appearance, setAppearance] = useState<LearnAppearance>(DEFAULT_APPEARANCE);
+  const [apprSaved, setApprSaved] = useState(false);
   const [regOpen, setRegOpen] = useState(true);
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -230,6 +229,7 @@ export default function AdminPage() {
         setAllowSkip(!!d.allowSkipReview);
         setSiteTitle(d.siteTitle ?? "");
         setHasIcon(!!d.hasSiteIcon);
+        if (d.learnAppearance) setAppearance(d.learnAppearance);
         if (d.ai) setAi(d.ai);
         if (d.tts) setTts(d.tts);
       }
@@ -683,7 +683,6 @@ export default function AdminPage() {
     setNewTarget(u.dailyNewTarget);
     setReviewTarget(u.dailyReviewTarget);
     setHlColor(u.highlightColor ?? "#e11d48");
-    setFontSizes({ wordSize: u.wordSize, segmentSize: u.segmentSize, sentenceSize: u.sentenceSize, sentenceCnSize: u.sentenceCnSize });
     setResetPwd("");
     setResetMsg("");
     setBindMsg("");
@@ -741,19 +740,18 @@ export default function AdminPage() {
     }
   }
 
-  // 保存学习页字号档位
-  async function saveFontSizes() {
-    if (!selected) return;
-    const r = await fetch(`/api/admin/users/${selected.id}`, {
+  // 保存学习页外观（全局设置，对所有学习者生效）
+  async function saveAppearance() {
+    const r = await fetch("/api/admin/config", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fontSizes),
+      body: JSON.stringify({ learnAppearance: appearance }),
     });
+    const d = await r.json();
     if (r.ok) {
-      setSelected({ ...selected, ...fontSizes });
-      setFsSaved(true);
-      setTimeout(() => setFsSaved(false), 2000);
-      load();
+      setAppearance(d.learnAppearance);
+      setApprSaved(true);
+      setTimeout(() => setApprSaved(false), 2000);
     }
   }
 
@@ -761,6 +759,25 @@ export default function AdminPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-6 flex flex-col gap-6">
+      {/* 页签：管理 / 设置 */}
+      <div className="flex gap-1 bg-black/5 rounded-full px-1 py-1 w-fit text-sm">
+        {([
+          { v: "manage", label: "管理" },
+          { v: "settings", label: "设置" },
+        ] as const).map((o) => (
+          <button
+            key={o.v}
+            onClick={() => setTab(o.v)}
+            className={`rounded-full px-4 py-1 cursor-pointer transition-colors ${
+              tab === o.v ? "bg-foreground text-white" : "text-black/60 hover:text-black"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "manage" && (
       <div className="flex gap-6">
       {/* 用户列表 */}
       <section className="flex-1">
@@ -969,42 +986,6 @@ export default function AdminPage() {
                     </button>
                   </div>
                 </div>
-                <h2 className="font-bold mt-5 mb-3">学习页字体大小</h2>
-                <div className="flex flex-col gap-3">
-                  {([
-                    { key: "wordSize", label: "单词大小" },
-                    { key: "segmentSize", label: "词根词缀大小" },
-                    { key: "sentenceSize", label: "例句大小" },
-                    { key: "sentenceCnSize", label: "例句中文大小" },
-                  ] as const).map((row) => (
-                    <div key={row.key} className="flex items-center justify-between gap-3">
-                      <span className="text-sm text-black/60">{row.label}</span>
-                      <div className="flex items-center gap-1 bg-black/5 rounded-full px-1 py-0.5 text-sm">
-                        {([
-                          { v: "big", label: "大" },
-                          { v: "bigger", label: "更大" },
-                          { v: "biggest", label: "比大更大" },
-                        ] as const).map((o) => (
-                          <button
-                            key={o.v}
-                            onClick={() => setFontSizes({ ...fontSizes, [row.key]: o.v })}
-                            className={`rounded-full px-2.5 py-0.5 cursor-pointer transition-colors ${
-                              fontSizes[row.key] === o.v ? "bg-foreground text-white" : "text-black/60 hover:text-black"
-                            }`}
-                          >
-                            {o.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    onClick={saveFontSizes}
-                    className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
-                  >
-                    {fsSaved ? "✓ 已保存" : "保存"}
-                  </button>
-                </div>
               </>
             )}
             <div className="flex flex-col gap-3">
@@ -1110,8 +1091,10 @@ export default function AdminPage() {
         </aside>
       )}
       </div>
+      )}
 
       {/* 家长留言 */}
+      {tab === "manage" && (
       <section className="bg-white rounded-2xl shadow p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-xl">家长留言</h2>
@@ -1231,8 +1214,10 @@ export default function AdminPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* 词书分配 */}
+      {tab === "manage" && (
       <section id="assign" className="bg-white rounded-2xl shadow p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-xl">词书分配</h2>
@@ -1337,8 +1322,10 @@ export default function AdminPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* 导入实况 */}
+      {tab === "manage" && (
       <section className="bg-white rounded-2xl shadow p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-xl">导入实况</h2>
@@ -1425,9 +1412,178 @@ export default function AdminPage() {
           </div>
         </div>
       </section>
+      )}
+
+      {/* 外观设置 */}
+      {tab === "settings" && (
+      <section className="bg-white rounded-2xl shadow p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-xl">外观设置</h2>
+        </div>
+        <div className="flex flex-col gap-4">
+          {([
+            { key: "wordSizePx", label: "单词字号", unit: "px" },
+            { key: "segmentSizePx", label: "词根词缀字号", unit: "px" },
+            { key: "sentenceSizePx", label: "例句字号", unit: "px" },
+            { key: "sentenceCnSizePx", label: "例句中文字号", unit: "px" },
+            { key: "cardWidthPct", label: "卡片宽度", unit: "%" },
+          ] as const).map((row) => {
+            const [min, max] = APPEARANCE_RANGES[row.key];
+            return (
+              <label key={row.key} className="flex items-center gap-3 text-sm text-black/60 max-w-3xl">
+                <span className="w-28 shrink-0">{row.label}</span>
+                <input
+                  type="range"
+                  min={min}
+                  max={max}
+                  value={appearance[row.key]}
+                  onChange={(e) => setAppearance({ ...appearance, [row.key]: Number(e.target.value) })}
+                  className="flex-1 accent-foreground"
+                />
+                <span className="w-16 shrink-0 text-right text-black/80 font-medium">
+                  {appearance[row.key]}
+                  {row.unit}
+                </span>
+              </label>
+            );
+          })}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={saveAppearance}
+              className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
+            >
+              {apprSaved ? "✓ 已保存" : "保存外观设置"}
+            </button>
+            <span className="text-xs text-black/40">全局生效：保存后对所有学习者的学习页立即生效</span>
+          </div>
+          {/* 实时预览：外框模拟浏览器窗口，内部白卡宽度 = 卡片宽度设置 */}
+          <div className="border border-black/10 rounded-2xl bg-black/[.03] p-4 sm:p-6 overflow-hidden">
+            <div
+              className="bg-white rounded-3xl shadow-lg p-6 mx-auto flex flex-col items-center justify-center gap-4"
+              style={{
+                width: `${appearance.cardWidthPct}%`,
+                maxWidth: "100%",
+                minHeight: `${Math.round(appearance.wordSizePx * 3)}px`,
+              }}
+            >
+              <div className="font-bold tracking-wide break-all" style={{ fontSize: clampPx(appearance.wordSizePx) }}>
+                apple
+              </div>
+              <div className="text-black/40 text-sm">/ˈæp.l/</div>
+              <SegmentWord
+                segments={[
+                  { part: "re", type: "prefix", meaningCn: "重复" },
+                  { part: "spect", type: "root", meaningCn: "看" },
+                  { part: "ful", type: "suffix", meaningCn: "充满…的" },
+                ]}
+                sizePx={appearance.segmentSizePx}
+              />
+              <div className="text-center break-all" style={{ fontSize: clampPx(appearance.sentenceSizePx) }}>
+                This is an apple.
+              </div>
+              <div className="text-black/50 text-center" style={{ fontSize: `${appearance.sentenceCnSizePx}px` }}>
+                这是一个苹果。
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-black/40">预览随滑杆实时变化（无需保存）；窄屏下字号会按视口自动缩小，与学习页一致。</p>
+        </div>
+      </section>
+      )}
+
+      {/* 站点设置 */}
+      {tab === "settings" && (
+      <section className="bg-white rounded-2xl shadow p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-xl">站点设置</h2>
+          {siteMsg && <span className="text-sm text-green-600">{siteMsg}</span>}
+        </div>
+        <div className="flex flex-col gap-4 max-w-3xl">
+          <div className="flex gap-4 flex-wrap items-end">
+            <label className="text-sm text-black/60 flex-1 min-w-56">
+              网站标题
+              <input
+                value={siteTitle}
+                onChange={(e) => setSiteTitle(e.target.value)}
+                className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
+                placeholder="背单词"
+              />
+            </label>
+            <div className="text-sm text-black/60">
+              网站图标
+              <div className="mt-1 flex items-center gap-3">
+                <button
+                  onClick={() => iconInputRef.current?.click()}
+                  className="w-10 h-10 rounded-lg border-2 border-dashed border-black/20 overflow-hidden flex items-center justify-center hover:border-accent transition-colors"
+                  title="点击上传图标"
+                >
+                  {hasIcon ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`/api/site-icon?v=${iconVer}`} alt="" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-black/30 text-lg">+</span>
+                  )}
+                </button>
+                <span className="text-xs text-black/40">png / ico / svg，不超过 2MB</span>
+                <input
+                  ref={iconInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadIcon(f);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
+            <span className="text-black/60">强检查</span>
+            <button
+              onClick={toggleStrict}
+              className={`w-11 h-6 rounded-full relative transition-colors ${strict ? "bg-green-400" : "bg-black/20"}`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                  strict ? "left-[1.375rem]" : "left-0.5"
+                }`}
+              />
+            </button>
+            <span className="text-xs text-black/40">
+              {strict ? "已开启：拼写检查和选择检查都答对才算检查通过" : "已关闭"}
+            </span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
+            <span className="text-black/60">允许跳过复习</span>
+            <button
+              onClick={toggleAllowSkip}
+              className={`w-11 h-6 rounded-full relative transition-colors ${allowSkip ? "bg-green-400" : "bg-black/20"}`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                  allowSkip ? "left-[1.375rem]" : "left-0.5"
+                }`}
+              />
+            </button>
+            <span className="text-xs text-black/40">
+              {allowSkip ? "已开启：学习者可跳过当天复习门禁（每次跳过都会记录在案）" : "已关闭：必须先完成复习才能学新词"}
+            </span>
+          </label>
+          <button
+            onClick={saveSite}
+            className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
+          >
+            保存站点设置
+          </button>
+          <p className="text-xs text-black/40">标题留空并保存可恢复默认「背单词」。图标上传后立即生效。</p>
+        </div>
+      </section>
+      )}
 
       {/* AI 解析设置 */}
-      {ai && (
+      {tab === "settings" && ai && (
         <section className="bg-white rounded-2xl shadow p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-xl">AI 解析设置</h2>
@@ -1502,7 +1658,7 @@ export default function AdminPage() {
       )}
 
       {/* TTS 语音设置 */}
-      {tts && (
+      {tab === "settings" && tts && (
         <section className="bg-white rounded-2xl shadow p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-xl">TTS 语音设置</h2>
@@ -1729,6 +1885,7 @@ export default function AdminPage() {
       )}
 
       {/* 音频资源检查 */}
+      {tab === "manage" && (
       <section className="bg-white rounded-2xl shadow p-5">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h2 className="font-bold text-xl">音频资源</h2>
@@ -1823,95 +1980,7 @@ export default function AdminPage() {
           </>
         )}
       </section>
-
-      {/* 站点设置 */}
-      <section className="bg-white rounded-2xl shadow p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-xl">站点设置</h2>
-          {siteMsg && <span className="text-sm text-green-600">{siteMsg}</span>}
-        </div>
-        <div className="flex flex-col gap-4 max-w-3xl">
-          <div className="flex gap-4 flex-wrap items-end">
-            <label className="text-sm text-black/60 flex-1 min-w-56">
-              网站标题
-              <input
-                value={siteTitle}
-                onChange={(e) => setSiteTitle(e.target.value)}
-                className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
-                placeholder="背单词"
-              />
-            </label>
-            <div className="text-sm text-black/60">
-              网站图标
-              <div className="mt-1 flex items-center gap-3">
-                <button
-                  onClick={() => iconInputRef.current?.click()}
-                  className="w-10 h-10 rounded-lg border-2 border-dashed border-black/20 overflow-hidden flex items-center justify-center hover:border-accent transition-colors"
-                  title="点击上传图标"
-                >
-                  {hasIcon ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`/api/site-icon?v=${iconVer}`} alt="" className="w-full h-full object-contain" />
-                  ) : (
-                    <span className="text-black/30 text-lg">+</span>
-                  )}
-                </button>
-                <span className="text-xs text-black/40">png / ico / svg，不超过 2MB</span>
-                <input
-                  ref={iconInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadIcon(f);
-                    e.target.value = "";
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
-            <span className="text-black/60">强检查</span>
-            <button
-              onClick={toggleStrict}
-              className={`w-11 h-6 rounded-full relative transition-colors ${strict ? "bg-green-400" : "bg-black/20"}`}
-            >
-              <span
-                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
-                  strict ? "left-[1.375rem]" : "left-0.5"
-                }`}
-              />
-            </button>
-            <span className="text-xs text-black/40">
-              {strict ? "已开启：拼写检查和选择检查都答对才算检查通过" : "已关闭"}
-            </span>
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
-            <span className="text-black/60">允许跳过复习</span>
-            <button
-              onClick={toggleAllowSkip}
-              className={`w-11 h-6 rounded-full relative transition-colors ${allowSkip ? "bg-green-400" : "bg-black/20"}`}
-            >
-              <span
-                className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
-                  allowSkip ? "left-[1.375rem]" : "left-0.5"
-                }`}
-              />
-            </button>
-            <span className="text-xs text-black/40">
-              {allowSkip ? "已开启：学习者可跳过当天复习门禁（每次跳过都会记录在案）" : "已关闭：必须先完成复习才能学新词"}
-            </span>
-          </label>
-          <button
-            onClick={saveSite}
-            className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90 w-40"
-          >
-            保存站点设置
-          </button>
-          <p className="text-xs text-black/40">标题留空并保存可恢复默认「背单词」。图标上传后立即生效。</p>
-        </div>
-      </section>
+      )}
     </div>
   );
 }

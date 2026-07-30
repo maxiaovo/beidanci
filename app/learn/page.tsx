@@ -9,6 +9,7 @@ import AudioButton from "@/components/AudioButton";
 import HighlightedSentence from "@/components/HighlightedSentence";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
 import { playAudio, preloadAudio, postProgress, StudyWord } from "@/lib/client";
+import { DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appearance";
 
 type Phase = "show" | "segments" | "ex1" | "ex2" | "trace" | "traceEx1" | "traceEx2";
 
@@ -38,50 +39,7 @@ const PREV_PHASE: Partial<Record<Phase, Phase>> = {
   traceEx2: "traceEx1",
 };
 
-// 学习页字号档位（由管理员在后台按用户设置，/api/session 下发）
-type SizeLevel = "big" | "bigger" | "biggest";
-
-const SIZE_LEVELS: SizeLevel[] = ["big", "bigger", "biggest"];
-
-function asSizeLevel(v: unknown): SizeLevel {
-  return SIZE_LEVELS.includes(v as SizeLevel) ? (v as SizeLevel) : "big";
-}
-
-const CARD_MIN_H: Record<SizeLevel, string> = {
-  big: "min-h-[26rem]",
-  bigger: "min-h-[32rem]",
-  biggest: "min-h-[38rem]",
-};
-
-const WORD_SIZE: Record<SizeLevel, string> = {
-  big: "text-6xl sm:text-8xl",
-  bigger: "text-7xl sm:text-9xl",
-  biggest: "text-8xl sm:text-[10rem]",
-};
-
-const SENTENCE_SIZE: Record<SizeLevel, string> = {
-  big: "text-2xl sm:text-3xl",
-  bigger: "text-3xl sm:text-4xl",
-  biggest: "text-4xl sm:text-5xl",
-};
-
-const SENTENCE_CN_SIZE: Record<SizeLevel, string> = {
-  big: "text-base",
-  bigger: "text-lg",
-  biggest: "text-2xl",
-};
-
-const TRACE_SIZE: Record<SizeLevel, string> = {
-  big: "text-5xl sm:text-7xl",
-  bigger: "text-6xl sm:text-8xl",
-  biggest: "text-7xl sm:text-9xl",
-};
-
-const TRACE_EX_SIZE: Record<SizeLevel, string> = {
-  big: "text-2xl sm:text-4xl",
-  bigger: "text-3xl sm:text-5xl",
-  biggest: "text-4xl sm:text-6xl",
-};
+// 学习页外观（全局设置，由管理员在后台统一配置，/api/session 下发）见 lib/appearance.ts
 
 export default function LearnPage() {
   return (
@@ -103,7 +61,7 @@ function LearnInner() {
   const [done, setDone] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [highlightColor, setHighlightColor] = useState<string | null>(null); // 例句目标词高亮颜色
-  const [sizes, setSizes] = useState({ wordSize: "big", segmentSize: "big", sentenceSize: "big", sentenceCnSize: "big" } as { wordSize: SizeLevel; segmentSize: SizeLevel; sentenceSize: SizeLevel; sentenceCnSize: SizeLevel }); // 管理员配置的字号档位
+  const [appearance, setAppearance] = useState<LearnAppearance>(DEFAULT_APPEARANCE); // 学习页外观（全局设置）
   const [msgQueue, setMsgQueue] = useState<ParentMessage[]>([]); // 家长留言弹窗队列
   const shownMsgRef = useRef<Set<string>>(new Set()); // 本次会话已弹过的留言
   const wordMsgsRef = useRef<ParentMessage[]>([]); // word 触发的留言
@@ -120,12 +78,7 @@ function LearnInner() {
       const d = await r.json();
       setAllowSkip(!!d.stats.allowSkipReview);
       setHighlightColor(d.stats.highlightColor ?? null);
-      setSizes({
-        wordSize: asSizeLevel(d.stats.wordSize),
-        segmentSize: asSizeLevel(d.stats.segmentSize),
-        sentenceSize: asSizeLevel(d.stats.sentenceSize),
-        sentenceCnSize: asSizeLevel(d.stats.sentenceCnSize),
-      });
+      setAppearance({ ...DEFAULT_APPEARANCE, ...(d.appearance ?? {}) });
       if (!d.reviewsCleared) {
         setBlocked(d.stats.dueCount);
       } else if (d.newWords.length === 0) {
@@ -338,13 +291,14 @@ function LearnInner() {
 
   if (!word) return null;
 
-  const wordCls = WORD_SIZE[sizes.wordSize];
-  const sentenceCls = SENTENCE_SIZE[sizes.sentenceSize];
-  const sentenceCnCls = SENTENCE_CN_SIZE[sizes.sentenceCnSize];
+  const wordStyle = { fontSize: clampPx(appearance.wordSizePx) };
+  const sentenceStyle = { fontSize: clampPx(appearance.sentenceSizePx) };
+  const sentenceCnStyle = { fontSize: `${appearance.sentenceCnSizePx}px` };
 
   return (
     <div
-      className="max-w-6xl mx-auto p-4 sm:p-6 flex flex-col items-center gap-6 select-none"
+      className="mx-auto p-4 sm:p-6 flex flex-col items-center gap-6 select-none"
+      style={{ width: `${appearance.cardWidthPct}%`, maxWidth: "100%" }}
       onClick={onTapNav}
     >
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
@@ -373,12 +327,16 @@ function LearnInner() {
       </div>
 
       {/* 大卡片 */}
-      <div className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 ${CARD_MIN_H[sizes.wordSize]} flex flex-col items-center justify-center gap-8`}>
+      <div
+        className="w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 flex flex-col items-center justify-center gap-8"
+        style={{ minHeight: `${Math.round(appearance.wordSizePx * 4.3)}px` }}
+      >
         {phase === "show" && (
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className={`${wordCls} font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all`}
+              className="font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all"
+              style={wordStyle}
               title="点击播放读音"
             >
               {word.text}
@@ -389,7 +347,7 @@ function LearnInner() {
 
         {phase === "segments" && (
           <>
-            <SegmentWord key={word.id} segments={word.segments} size={sizes.segmentSize} />
+            <SegmentWord key={word.id} segments={word.segments} sizePx={appearance.segmentSizePx} />
             <div className="text-center">
               <span className="text-black/40 mr-3">{word.phonetic}</span>
               <AudioButton file={word.audioWord} size="lg" />
@@ -405,7 +363,8 @@ function LearnInner() {
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className={`${wordCls} font-bold hover:opacity-70 cursor-pointer break-all`}
+              className="font-bold hover:opacity-70 cursor-pointer break-all"
+              style={wordStyle}
             >
               {word.text}
             </button>
@@ -421,9 +380,10 @@ function LearnInner() {
                     sentence={word.example1}
                     word={word.text}
                     color={highlightColor}
-                    className={`block ${sentenceCls}`}
+                    className="block"
+                    style={sentenceStyle}
                   />
-                  <div className={`text-black/50 mt-1 ${sentenceCnCls}`}>{word.example1Cn}</div>
+                  <div className="text-black/50 mt-1" style={sentenceCnStyle}>{word.example1Cn}</div>
                 </button>
               </div>
               {phase === "ex2" && (
@@ -436,9 +396,10 @@ function LearnInner() {
                       sentence={word.example2}
                       word={word.text}
                       color={highlightColor}
-                      className={`block ${sentenceCls}`}
+                      className="block"
+                      style={sentenceStyle}
                     />
-                    <div className={`text-black/50 mt-1 ${sentenceCnCls}`}>{word.example2Cn}</div>
+                    <div className="text-black/50 mt-1" style={sentenceCnStyle}>{word.example2Cn}</div>
                   </button>
                 </div>
               )}
@@ -449,21 +410,21 @@ function LearnInner() {
         {phase === "trace" && (
           <>
             <div className="text-black/40">{word.phonetic} · {word.meaningCn}</div>
-            <TypingTrainer target={word.text} onComplete={afterTrace} fontSize={TRACE_SIZE[sizes.wordSize]} />
+            <TypingTrainer target={word.text} onComplete={afterTrace} fontSizePx={Math.round(appearance.wordSizePx * 0.75)} />
           </>
         )}
 
         {phase === "traceEx1" && (
           <>
             <div className="text-black/50">抄写例句 1 / 2</div>
-            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSize={TRACE_EX_SIZE[sizes.sentenceSize]} />
+            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSizePx={Math.round(appearance.sentenceSizePx * 1.2)} />
           </>
         )}
 
         {phase === "traceEx2" && (
           <>
             <div className="text-black/50">抄写例句 2 / 2</div>
-            <TypingTrainer target={word.example2} onComplete={finishWord} fontSize={TRACE_EX_SIZE[sizes.sentenceSize]} />
+            <TypingTrainer target={word.example2} onComplete={finishWord} fontSizePx={Math.round(appearance.sentenceSizePx * 1.2)} />
           </>
         )}
       </div>
