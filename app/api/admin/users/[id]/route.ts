@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/session";
+import { hexColor } from "@/lib/theme";
 
 // 管理员查看某用户最近学习记录
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -51,6 +52,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (Number.isInteger(body.dailyReviewTarget) && body.dailyReviewTarget >= 1 && body.dailyReviewTarget <= 500) {
     data.dailyReviewTarget = body.dailyReviewTarget;
+  }
+  // 高亮颜色："" 或 null 表示清除
+  if (body.highlightColor === "" || body.highlightColor === null) {
+    data.highlightColor = null;
+  } else if (typeof body.highlightColor === "string") {
+    if (hexColor(body.highlightColor) !== body.highlightColor) {
+      return NextResponse.json({ error: "高亮颜色格式错误（应为 #RRGGBB）" }, { status: 400 });
+    }
+    data.highlightColor = body.highlightColor;
   }
   // 重置密码
   if (typeof body.newPassword === "string") {

@@ -33,14 +33,26 @@ function serializeWord(w: {
   };
 }
 
+interface PlanOut {
+  bookId: string;
+  bookName: string;
+  amountType: string;
+  wordsPerDay: number;
+  fractionDen: number;
+  quota: number;
+  doneToday: number;
+  remaining: number;
+}
+
 // 今日学习队列：先复习（门禁），后新词
-export async function GET() {
+export async function GET(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
   if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const now = new Date();
   const start = todayStart();
+  const bookParam = new URL(req.url).searchParams.get("book");
 
   // 到期复习词（今日额度内）
   const dueProgress = await prisma.wordProgress.findMany({
@@ -64,14 +76,94 @@ export async function GET() {
     ...serializeWord(p.word as never),
   }));
 
+  // ?book= 校验：不可见时视为无效，对应新词为空（不报错）
+  let bookFilterId: string | null = null;
+  if (bookParam) {
+    const visible = await prisma.book.findFirst({
+      where: { id: bookParam, ...bookVisibleWhere(user.id) },
+      select: { id: true },
+    });
+    if (visible) bookFilterId = bookParam;
+  }
+
   // 新词：复习清完（或当天已跳过复习）才下发
   let newWords: ReturnType<typeof serializeWord>[] = [];
+  const plansOut: PlanOut[] = [];
   const skippedToday =
     (await prisma.reviewSkip.count({ where: { userId: user.id, createdAt: { gte: start } } })) > 0;
   const reviewsCleared = reviews.length === 0 || skippedToday;
-  if (reviewsCleared) {
+
+  const plans = await prisma.bookPlan.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "asc" },
+    include: { book: { select: { name: true } } },
+  });
+
+  if (plans.length > 0) {
+    // 有计划：按计划逐书配额下发新词
+    const learned = await prisma.wordProgress.findMany({
+      where: { userId: user.id },
+      select: { wordId: true },
+    });
+    const learnedIds = learned.map((l) => l.wordId);
+    const unlearnedCond = learnedIds.length ? { id: { notIn: learnedIds } } : {};
+
+    for (const plan of plans) {
+      // 今日该本书已学新词数
+      const doneToday = await prisma.studyLog.count({
+        where: {
+          userId: user.id,
+          mode: "learn",
+          createdAt: { gte: start },
+          word: { unit: { bookId: plan.bookId } },
+        },
+      });
+
+      let quota: number;
+      if (plan.amountType === "words") {
+        quota = plan.wordsPerDay;
+      } else {
+        // 分数模式：找到第一个还有未学词的单元，配额 = ceil(单元词数 / fractionDen)
+        const unit = await prisma.unit.findFirst({
+          where: { bookId: plan.bookId, words: { some: unlearnedCond } },
+          orderBy: { orderIndex: "asc" },
+          include: { words: { select: { id: true } } },
+        });
+        quota = unit ? Math.max(1, Math.ceil(unit.words.length / plan.fractionDen)) : 0;
+      }
+
+      const remaining = Math.max(0, quota - doneToday);
+      plansOut.push({
+        bookId: plan.bookId,
+        bookName: plan.book.name,
+        amountType: plan.amountType,
+        wordsPerDay: plan.wordsPerDay,
+        fractionDen: plan.fractionDen,
+        quota,
+        doneToday,
+        remaining,
+      });
+
+      // ?book= 指定时只取该书的词；指定的书不可见则一个都不取
+      const wantThisBook = !bookParam || bookFilterId === plan.bookId;
+      if (reviewsCleared && remaining > 0 && wantThisBook) {
+        const fresh = await prisma.word.findMany({
+          where: {
+            id: learnedIds.length ? { notIn: learnedIds } : undefined,
+            unit: { bookId: plan.bookId },
+          },
+          orderBy: [{ unit: { orderIndex: "asc" } }, { orderIndex: "asc" }],
+          take: remaining,
+          select: wordSelect,
+        });
+        newWords.push(...fresh.map((w) => serializeWord(w as never)));
+      }
+    }
+  } else if (reviewsCleared) {
+    // 无计划：保持原全局 dailyNewTarget 行为
     const remaining = Math.max(0, user.dailyNewTarget - learnedToday);
-    if (remaining > 0) {
+    const bookBlocked = bookParam !== null && bookFilterId === null;
+    if (remaining > 0 && !bookBlocked) {
       const learned = await prisma.wordProgress.findMany({
         where: { userId: user.id },
         select: { wordId: true },
@@ -80,7 +172,13 @@ export async function GET() {
       const fresh = await prisma.word.findMany({
         where: {
           id: learnedIds.length ? { notIn: learnedIds } : undefined,
-          unit: { book: { ...bookVisibleWhere(user.id), status: "ready" } },
+          unit: {
+            book: {
+              ...(bookFilterId ? { id: bookFilterId } : {}),
+              ...bookVisibleWhere(user.id),
+              status: "ready",
+            },
+          },
         },
         orderBy: [{ unit: { book: { createdAt: "asc" } } }, { unit: { orderIndex: "asc" } }, { orderIndex: "asc" }],
         take: remaining,
@@ -94,6 +192,7 @@ export async function GET() {
     reviewsCleared,
     reviews,
     newWords,
+    plans: plansOut,
     stats: {
       dueCount: reviews.length,
       reviewsDoneToday,
@@ -102,6 +201,7 @@ export async function GET() {
       dailyReviewTarget: user.dailyReviewTarget,
       defaultCheckMode: user.defaultCheckMode,
       allowSkipReview: await isAllowSkipReview(),
+      highlightColor: user.highlightColor ?? null,
     },
   });
 }

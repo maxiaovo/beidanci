@@ -127,6 +127,21 @@ export function playBuzz() {
   tone(196, 0.18, 0.25, "square", 0.12);
 }
 
+// 呱呱（青蛙叫）：低频锯齿波短促下滑，用于空格位置输错时
+export function playGua() {
+  const ac = audioCtx();
+  const osc = ac.createOscillator();
+  const g = ac.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(220, ac.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(140, ac.currentTime + 0.18);
+  g.gain.setValueAtTime(0.2, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.2);
+  osc.connect(g).connect(ac.destination);
+  osc.start();
+  osc.stop(ac.currentTime + 0.2);
+}
+
 export async function postProgress(wordId: string, mode: string, result: "correct" | "wrong" | "giveup") {
   await fetch("/api/progress", {
     method: "POST",

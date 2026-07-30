@@ -45,6 +45,7 @@ export async function GET() {
       avatarUrl: u.avatarUrl,
       dailyNewTarget: u.dailyNewTarget,
       dailyReviewTarget: u.dailyReviewTarget,
+      highlightColor: u.highlightColor,
       todayLogs,
       totalLogs,
       accuracy: totalLogs ? Math.round((correctLogs / totalLogs) * 100) : null,

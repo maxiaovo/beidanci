@@ -1,24 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import SegmentWord from "@/components/SegmentWord";
 import TypingTrainer from "@/components/TypingTrainer";
 import AudioButton from "@/components/AudioButton";
+import HighlightedSentence from "@/components/HighlightedSentence";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
 import { playAudio, preloadAudio, postProgress, StudyWord } from "@/lib/client";
 
 type Phase = "show" | "segments" | "ex1" | "ex2" | "trace" | "traceEx1" | "traceEx2";
 
 const PHASE_HINT: Record<Phase, string> = {
-  show: "点屏幕右侧，看词根词缀拆解",
-  segments: "点屏幕右侧，看例句 1",
-  ex1: "点屏幕右侧，看例句 2",
-  ex2: "点屏幕右侧，开始临摹单词",
-  trace: "",
-  traceEx1: "",
-  traceEx2: "",
+  show: "→ / 回车：词根词缀拆解 · ←：返回上一步",
+  segments: "→ / 回车：例句 1 · ←：返回上一步",
+  ex1: "→ / 回车：例句 2 · ←：返回上一步",
+  ex2: "→ / 回车：开始临摹 · ←：返回上一步",
+  trace: "临摹单词，完成后回车继续 · Shift+← 返回上一步",
+  traceEx1: "抄写例句 1，完成后回车继续 · Shift+← 返回上一步",
+  traceEx2: "抄写例句 2，完成后回车结束 · Shift+← 返回上一步",
 };
 
 const NEXT_PHASE: Partial<Record<Phase, Phase>> = {
@@ -32,9 +33,55 @@ const PREV_PHASE: Partial<Record<Phase, Phase>> = {
   segments: "show",
   ex1: "segments",
   ex2: "ex1",
+  trace: "ex2",
+  traceEx1: "trace",
+  traceEx2: "traceEx1",
+};
+
+// 卡片尺寸档位（localStorage("cardSize") 持久化，默认 big）
+type CardSize = "big" | "bigger" | "biggest";
+
+const CARD_SIZE_OPTIONS: { key: CardSize; label: string }[] = [
+  { key: "big", label: "大" },
+  { key: "bigger", label: "更大" },
+  { key: "biggest", label: "比大更大" },
+];
+
+const SIZE_CLASSES: Record<CardSize, { card: string; word: string; sentence: string; trace: string; traceEx: string }> = {
+  big: {
+    card: "min-h-[26rem]",
+    word: "text-6xl sm:text-8xl",
+    sentence: "text-2xl sm:text-3xl",
+    trace: "text-5xl sm:text-7xl",
+    traceEx: "text-2xl sm:text-4xl",
+  },
+  bigger: {
+    card: "min-h-[32rem]",
+    word: "text-7xl sm:text-9xl",
+    sentence: "text-3xl sm:text-4xl",
+    trace: "text-6xl sm:text-8xl",
+    traceEx: "text-3xl sm:text-5xl",
+  },
+  biggest: {
+    card: "min-h-[38rem]",
+    word: "text-8xl sm:text-[10rem]",
+    sentence: "text-4xl sm:text-5xl",
+    trace: "text-7xl sm:text-9xl",
+    traceEx: "text-4xl sm:text-6xl",
+  },
 };
 
 export default function LearnPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-black/40">加载中…</div>}>
+      <LearnInner />
+    </Suspense>
+  );
+}
+
+function LearnInner() {
+  const searchParams = useSearchParams();
+  const bookParam = searchParams.get("book"); // 选书学习：?book=<id>
   const [words, setWords] = useState<StudyWord[]>([]);
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>("show");
@@ -43,20 +90,37 @@ export default function LearnPage() {
   const [allowSkip, setAllowSkip] = useState(false); // 管理员允许跳过复习
   const [done, setDone] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [highlightColor, setHighlightColor] = useState<string | null>(null); // 例句目标词高亮颜色
+  const [cardSize, setCardSize] = useState<CardSize>("big"); // 首帧用默认"大"，挂载后读 localStorage
   const [msgQueue, setMsgQueue] = useState<ParentMessage[]>([]); // 家长留言弹窗队列
   const shownMsgRef = useRef<Set<string>>(new Set()); // 本次会话已弹过的留言
   const wordMsgsRef = useRef<ParentMessage[]>([]); // word 触发的留言
   const msgTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const submittedRef = useRef<Set<string>>(new Set()); // 已提交过进度的 wordId（回退重做不重复计数）
   const router = useRouter();
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
+  // 卡片尺寸：挂载后读 localStorage，避免水合不一致（异步应用，避开同步 setState-in-effect）
+  useEffect(() => {
+    const v = localStorage.getItem("cardSize");
+    if (v !== "bigger" && v !== "biggest") return;
+    const t = setTimeout(() => setCardSize(v), 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  function changeCardSize(s: CardSize) {
+    setCardSize(s);
+    localStorage.setItem("cardSize", s);
+  }
+
   const loadSession = useCallback(() => {
-    fetch("/api/session").then(async (r) => {
+    fetch(bookParam ? `/api/session?book=${encodeURIComponent(bookParam)}` : "/api/session").then(async (r) => {
       if (r.status === 401) return router.push("/login");
       if (r.status === 403) return router.replace("/parent"); // 家长无学习权限
       const d = await r.json();
       setAllowSkip(!!d.stats.allowSkipReview);
+      setHighlightColor(d.stats.highlightColor ?? null);
       if (!d.reviewsCleared) {
         setBlocked(d.stats.dueCount);
       } else if (d.newWords.length === 0) {
@@ -68,7 +132,7 @@ export default function LearnPage() {
       }
       setLoaded(true);
     });
-  }, [router]);
+  }, [router, bookParam]);
 
   useEffect(loadSession, [loadSession]);
 
@@ -89,7 +153,6 @@ export default function LearnPage() {
     });
     const timers = msgTimersRef.current;
     return () => timers.forEach(clearTimeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 每条留言每次会话只弹一次
@@ -104,7 +167,6 @@ export default function LearnPage() {
     for (const m of wordMsgsRef.current) {
       if (m.triggerValue === idx + 1) enqueueMsg(m);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
 
   // 跳过复习：留痕后重新拉取队列（门禁放行）
@@ -121,7 +183,11 @@ export default function LearnPage() {
 
   const finishWord = useCallback(async () => {
     if (!word) return;
-    await postProgress(word.id, "learn", "correct");
+    // 回退重做不重复上报进度
+    if (!submittedRef.current.has(word.id)) {
+      submittedRef.current.add(word.id);
+      await postProgress(word.id, "learn", "correct");
+    }
     if (idx + 1 >= words.length) {
       setDone(true);
     } else {
@@ -130,38 +196,72 @@ export default function LearnPage() {
     }
   }, [word, idx, words.length]);
 
-  // 推进 / 回退阶段（临摹阶段由 TypingTrainer 自己接管，不参与）
+  // 推进 / 回退阶段
   const advance = useCallback(() => {
     setPhase((prev) => NEXT_PHASE[prev] ?? prev);
   }, []);
 
+  // 回退：show 阶段且不是第一个词时跨词回退，否则按阶段表回退（含临摹阶段）
   const goBack = useCallback(() => {
+    if (phaseRef.current === "show") {
+      setIdx((i) => (i > 0 ? i - 1 : i));
+      setPhase("show");
+      return;
+    }
     setPhase((prev) => PREV_PHASE[prev] ?? prev);
   }, []);
 
-  // 键盘：回车/右方向键下一步，左方向键上一步
+  // 临摹阶段的"下一步"（仅 Shift+方向键触发）：只允许在临摹阶段间前进，不能直接完成单词
+  const advanceTrace = useCallback(() => {
+    const p = phaseRef.current;
+    if (p === "trace") {
+      if (extended && word?.example1) setPhase("traceEx1");
+    } else if (p === "traceEx1") {
+      setPhase("traceEx2");
+    }
+  }, [extended, word]);
+
+  // 键盘：浏览阶段方向键/回车导航；临摹阶段方向键需加 Shift（回车归 TypingTrainer）
   useEffect(() => {
+    const backKeys = ["ArrowUp", "ArrowLeft", "PageUp"];
+    const nextKeys = ["ArrowDown", "ArrowRight", "PageDown"];
     function onKey(e: KeyboardEvent) {
       const p = phaseRef.current;
-      if (p === "trace" || p === "traceEx1" || p === "traceEx2") return;
-      if (e.key === "Enter" || e.key === "ArrowRight") {
-        e.preventDefault();
-        advance();
-      } else if (e.key === "ArrowLeft") {
+      const inTrace = p === "trace" || p === "traceEx1" || p === "traceEx2";
+      if (inTrace) {
+        if (!e.shiftKey) return;
+        if (backKeys.includes(e.key)) {
+          e.preventDefault();
+          goBack();
+        } else if (nextKeys.includes(e.key)) {
+          e.preventDefault();
+          advanceTrace();
+        }
+        return;
+      }
+      if (backKeys.includes(e.key)) {
         e.preventDefault();
         goBack();
+      } else if (nextKeys.includes(e.key) || e.key === "Enter") {
+        e.preventDefault();
+        advance();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance, goBack]);
+  }, [advance, advanceTrace, goBack]);
 
   // 触屏/鼠标：点屏幕右半 = 下一步，左半 = 上一步（点到按钮、链接等交互元素时不触发）
+  // 临摹阶段只允许左半返回，前进必须由 TypingTrainer 完成来触发，防止跳过
   function onTapNav(e: ReactMouseEvent<HTMLDivElement>) {
-    const p = phaseRef.current;
-    if (p === "trace" || p === "traceEx1" || p === "traceEx2") return;
     const el = e.target as HTMLElement;
     if (el.closest("button, a, input, label, select, textarea")) return;
+    const p = phaseRef.current;
+    const inTrace = p === "trace" || p === "traceEx1" || p === "traceEx2";
+    if (inTrace) {
+      if (e.clientX < window.innerWidth / 2) goBack();
+      return;
+    }
     if (e.clientX >= window.innerWidth / 2) advance();
     else goBack();
   }
@@ -233,7 +333,7 @@ export default function LearnPage() {
 
   if (!word) return null;
 
-  const inTrace = phase === "trace" || phase === "traceEx1" || phase === "traceEx2";
+  const sz = SIZE_CLASSES[cardSize];
 
   return (
     <div
@@ -241,28 +341,50 @@ export default function LearnPage() {
       onClick={onTapNav}
     >
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
-      {/* 顶部进度 + 扩展模式开关 */}
-      <div className="w-full flex items-center justify-between flex-wrap gap-x-4 gap-y-2 text-sm text-black/50">
-        <span>{word.bookName} · {word.unitTitle}</span>
-        <span>第 {idx + 1} / {words.length} 词</span>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={extended}
-            onChange={(e) => setExtended(e.target.checked)}
-            className="accent-foreground"
-          />
-          扩展模式（抄写例句）
-        </label>
+      {/* 顶部进度 + 卡片尺寸档位 + 扩展模式开关 + 退出 */}
+      <div className="w-full">
+        <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-2 text-sm text-black/50">
+          <span>{word.bookName} · {word.unitTitle}</span>
+          <span>第 {idx + 1} / {words.length} 词</span>
+          <div className="flex items-center gap-1 bg-white/70 rounded-full px-1 py-0.5">
+            {CARD_SIZE_OPTIONS.map((o) => (
+              <button
+                key={o.key}
+                onClick={() => changeCardSize(o.key)}
+                className={`rounded-full px-2.5 py-0.5 cursor-pointer transition-colors ${
+                  cardSize === o.key ? "bg-foreground text-white" : "text-black/60 hover:text-black"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={extended}
+              onChange={(e) => setExtended(e.target.checked)}
+              className="accent-foreground"
+            />
+            扩展模式（抄写例句）
+          </label>
+          <Link href="/" className="hover:text-black transition-colors">
+            ✕ 退出
+          </Link>
+        </div>
+        {/* 进度条：填充宽度 = 已完成词数 / 总词数 */}
+        <div className="mt-2 h-1.5 w-full rounded-full bg-black/10 overflow-hidden">
+          <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${(idx / words.length) * 100}%` }} />
+        </div>
       </div>
 
       {/* 大卡片 */}
-      <div className="w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 min-h-[26rem] flex flex-col items-center justify-center gap-8">
+      <div className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 ${sz.card} flex flex-col items-center justify-center gap-8`}>
         {phase === "show" && (
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className="text-5xl sm:text-7xl font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all"
+              className={`${sz.word} font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all`}
               title="点击播放读音"
             >
               {word.text}
@@ -273,7 +395,7 @@ export default function LearnPage() {
 
         {phase === "segments" && (
           <>
-            <SegmentWord key={word.id} segments={word.segments} />
+            <SegmentWord key={word.id} segments={word.segments} big={cardSize === "biggest"} />
             <div className="text-center">
               <span className="text-black/40 mr-3">{word.phonetic}</span>
               <AudioButton file={word.audioWord} size="lg" />
@@ -289,28 +411,48 @@ export default function LearnPage() {
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className="text-3xl sm:text-4xl font-bold hover:opacity-70 cursor-pointer break-all"
+              className={`${sz.word} font-bold hover:opacity-70 cursor-pointer break-all`}
             >
               {word.text}
             </button>
             <div className="flex flex-col gap-6 max-w-2xl">
-              <button
-                onClick={() => playAudio(word.audioEx1)}
-                className={`text-center cursor-pointer rounded-xl p-3 transition-colors ${
-                  phase === "ex1" ? "bg-accent/30" : "opacity-40 hover:opacity-70"
-                }`}
-              >
-                <div className="text-xl sm:text-2xl">{word.example1}</div>
-                <div className="text-black/50 mt-1">{word.example1Cn}</div>
-              </button>
-              {phase === "ex2" && (
+              <div>
+                <div className="flex justify-center mb-1">
+                  <AudioButton file={word.audioEx1} size="sm" />
+                </div>
                 <button
-                  onClick={() => playAudio(word.audioEx2)}
-                  className="text-center cursor-pointer rounded-xl p-3 bg-[#FFDAC1]/30"
+                  onClick={() => playAudio(word.audioEx1)}
+                  className={`w-full text-center cursor-pointer rounded-xl p-3 transition-colors ${
+                    phase === "ex1" ? "bg-accent/30" : "opacity-40 hover:opacity-70"
+                  }`}
                 >
-                  <div className="text-xl sm:text-2xl">{word.example2}</div>
-                  <div className="text-black/50 mt-1">{word.example2Cn}</div>
+                  <HighlightedSentence
+                    sentence={word.example1}
+                    word={word.text}
+                    color={highlightColor}
+                    className={`block ${sz.sentence}`}
+                  />
+                  <div className="text-black/50 mt-1">{word.example1Cn}</div>
                 </button>
+              </div>
+              {phase === "ex2" && (
+                <div>
+                  <div className="flex justify-center mb-1">
+                    <AudioButton file={word.audioEx2} size="sm" />
+                  </div>
+                  <button
+                    onClick={() => playAudio(word.audioEx2)}
+                    className="w-full text-center cursor-pointer rounded-xl p-3 bg-[#FFDAC1]/30"
+                  >
+                    <HighlightedSentence
+                      sentence={word.example2}
+                      word={word.text}
+                      color={highlightColor}
+                      className={`block ${sz.sentence}`}
+                    />
+                    <div className="text-black/50 mt-1">{word.example2Cn}</div>
+                  </button>
+                </div>
               )}
             </div>
           </>
@@ -319,30 +461,28 @@ export default function LearnPage() {
         {phase === "trace" && (
           <>
             <div className="text-black/40">{word.phonetic} · {word.meaningCn}</div>
-            <TypingTrainer target={word.text} onComplete={afterTrace} fontSize="text-4xl sm:text-6xl" />
+            <TypingTrainer target={word.text} onComplete={afterTrace} fontSize={sz.trace} />
           </>
         )}
 
         {phase === "traceEx1" && (
           <>
             <div className="text-black/50">抄写例句 1 / 2</div>
-            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSize="text-2xl sm:text-3xl" />
+            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSize={sz.traceEx} />
           </>
         )}
 
         {phase === "traceEx2" && (
           <>
             <div className="text-black/50">抄写例句 2 / 2</div>
-            <TypingTrainer target={word.example2} onComplete={finishWord} fontSize="text-2xl sm:text-3xl" />
+            <TypingTrainer target={word.example2} onComplete={finishWord} fontSize={sz.traceEx} />
           </>
         )}
       </div>
 
-      {!inTrace && (
-        <div className="text-black/40 text-sm bg-white/70 rounded-full px-4 py-1.5 text-center">
-          👆 {PHASE_HINT[phase]} · 点左侧返回上一步
-        </div>
-      )}
+      <div className="text-black/40 text-sm bg-white/70 rounded-full px-4 py-1.5 text-center">
+        👆 {PHASE_HINT[phase]}
+      </div>
     </div>
   );
 }

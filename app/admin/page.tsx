@@ -9,6 +9,7 @@ interface UserRow {
   role: string;
   parentId: string | null;
   avatarUrl: string | null;
+  highlightColor: string | null;
   dailyNewTarget: number;
   dailyReviewTarget: number;
   todayLogs: number;
@@ -132,6 +133,8 @@ export default function AdminPage() {
   const [newTarget, setNewTarget] = useState(20);
   const [reviewTarget, setReviewTarget] = useState(100);
   const [saved, setSaved] = useState(false);
+  const [hlColor, setHlColor] = useState("#e11d48");
+  const [hlSaved, setHlSaved] = useState(false);
   const [regOpen, setRegOpen] = useState(true);
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -672,6 +675,7 @@ export default function AdminPage() {
     setSelected(u);
     setNewTarget(u.dailyNewTarget);
     setReviewTarget(u.dailyReviewTarget);
+    setHlColor(u.highlightColor ?? "#e11d48");
     setResetPwd("");
     setResetMsg("");
     setBindMsg("");
@@ -710,6 +714,23 @@ export default function AdminPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     load();
+  }
+
+  // 保存/清除例句高亮色；clear 为 true 时清除（恢复默认）
+  async function saveHighlight(clear = false) {
+    if (!selected) return;
+    const r = await fetch(`/api/admin/users/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ highlightColor: clear ? "" : hlColor }),
+    });
+    if (r.ok) {
+      const next = clear ? null : hlColor;
+      setSelected({ ...selected, highlightColor: next });
+      setHlSaved(true);
+      setTimeout(() => setHlSaved(false), 2000);
+      load();
+    }
   }
 
   if (!users) return <div className="p-10 text-center text-black/40">加载中…</div>;
@@ -896,6 +917,33 @@ export default function AdminPage() {
                   >
                     {saved ? "✓ 已保存" : "保存修改"}
                   </button>
+                </div>
+                <h2 className="font-bold mt-5 mb-3">例句高亮色</h2>
+                <div className="flex flex-col gap-3">
+                  <label className="text-sm text-black/60">
+                    高亮颜色
+                    <input
+                      type="color"
+                      value={hlColor}
+                      onChange={(e) => setHlColor(e.target.value)}
+                      className="mt-1 block w-full h-9 border rounded-lg cursor-pointer"
+                    />
+                  </label>
+                  <p className="text-xs text-black/40">该学员学习时，例句中当前单词按此颜色高亮</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveHighlight()}
+                      className="flex-1 bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
+                    >
+                      {hlSaved ? "✓ 已保存" : "保存"}
+                    </button>
+                    <button
+                      onClick={() => saveHighlight(true)}
+                      className="border rounded-lg px-4 py-2 text-black/60 hover:bg-black/5"
+                    >
+                      清除
+                    </button>
+                  </div>
                 </div>
               </>
             )}

@@ -21,6 +21,7 @@ model User {
   defaultCheckMode  String   @default("spell") // spell | choice
   themePreset       String?  // 主题预设 id：purple | green | blue | warm | dark | custom
   themeCustom       String?  // JSON：{background, foreground, accent, accent2}
+  highlightColor    String?  // 学习页高亮颜色（hex）
   createdAt         DateTime @default(now())
 
   books       Book[]
@@ -29,6 +30,22 @@ model User {
   assignments BookAssignment[]
   reviewSkips ReviewSkip[]
   messages    Message[]
+  bookPlans   BookPlan[]
+}
+
+// 学习计划：每本书的每日新词量（按词数或单元分数）
+model BookPlan {
+  id          String   @id @default(cuid())
+  userId      String
+  bookId      String
+  amountType  String   @default("words") // words | fraction
+  wordsPerDay Int      @default(10)
+  fractionDen Int      @default(2)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book        Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
 }
 
 // 跳过复习留痕：管理员开启"允许跳过"后，学习者当天可跳过复习门禁，每次跳过记一条
@@ -72,6 +89,7 @@ model Book {
 
   units       Unit[]
   assignments BookAssignment[]
+  bookPlans   BookPlan[]
 }
 
 model BookAssignment {
