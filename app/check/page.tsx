@@ -19,6 +19,25 @@ interface QuizWord {
 
 type QuizMode = "spell" | "choice";
 
+// 一道检查题：某个词的一种检查方式。强检查时每个词拆成拼写、选择两道题，
+// 两轮分别随机排序，保证同一个词的两次检查不会挨在一起。
+interface Task {
+  word: QuizWord;
+  mode: QuizMode;
+}
+
+const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
+
+function buildTasks(ws: QuizWord[], strict: boolean, mode: QuizMode): Task[] {
+  if (strict) {
+    return [
+      ...shuffle(ws).map((word) => ({ word, mode: "spell" as const })),
+      ...shuffle(ws).map((word) => ({ word, mode: "choice" as const })),
+    ];
+  }
+  return shuffle(ws).map((word) => ({ word, mode }));
+}
+
 export default function CheckPage() {
   return (
     <Suspense fallback={<div className="p-10 text-center text-black/40">加载中…</div>}>
@@ -32,14 +51,19 @@ function CheckInner() {
   const isReview = params.get("mode") === "review";
   const router = useRouter();
 
-  const [words, setWords] = useState<QuizWord[]>([]);
+  const [words, setWords] = useState<QuizWord[]>([]); // 本轮要检查的词
+  const [tasks, setTasks] = useState<Task[]>([]); // 本轮打散后的题目队列
   const [distractors, setDistractors] = useState<string[]>([]);
   const [idx, setIdx] = useState(0);
-  const [quizMode, setQuizMode] = useState<QuizMode | null>(null);
+  const [quizMode, setQuizMode] = useState<QuizMode | null>(null); // 非强检查的本轮模式
   const [strict, setStrict] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [finished, setFinished] = useState(false);
   const [reviewCleared, setReviewCleared] = useState(false);
+  const [skipped, setSkipped] = useState(false); // 用户强行跳过了本次复习
+  const [allowSkip, setAllowSkip] = useState(false);
+  const [round, setRound] = useState(1); // 复习循环轮次：未通过的词进入下一轮
+  const failedRef = useRef<Set<string>>(new Set()); // 本轮未通过（答错/放弃过）的词
 
   // 拼写题状态
   const [input, setInput] = useState("");
@@ -52,7 +76,26 @@ function CheckInner() {
   const [options, setOptions] = useState<string[]>([]);
   const [wrongPicks, setWrongPicks] = useState<string[]>([]);
 
-  const word = words[idx];
+  const task = tasks[idx];
+  const word = task?.word;
+  const mode = task?.mode ?? quizMode ?? "spell";
+
+  // 开启一轮检查：打散题目、重置进度与未通过记录
+  const startRound = useCallback(
+    (ws: QuizWord[], isStrict: boolean, m: QuizMode) => {
+      setWords(ws);
+      setTasks(buildTasks(ws, isStrict, m));
+      setIdx(0);
+      failedRef.current = new Set();
+      // 重置题目状态，避免上一轮的残留带到新一轮
+      setInput("");
+      setSpellState("idle");
+      setShowAnswer(false);
+      setWrongPicks([]);
+      preloadAudio(ws.map((w) => w.audioWord));
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     // 站点配置（强检查开关）
@@ -65,12 +108,13 @@ function CheckInner() {
       if (r.status === 401) return router.push("/login");
       if (r.status === 403) return router.replace("/parent"); // 家长无学习权限
       const d = await r.json();
+      setAllowSkip(!!d.stats.allowSkipReview);
       if (d.reviewsCleared) {
         setReviewCleared(true);
       } else {
-        setWords(d.reviews);
-        preloadAudio(d.reviews.map((w: QuizWord) => w.audioWord));
-        setQuizMode(isStrict ? "spell" : (d.stats.defaultCheckMode as QuizMode));
+        const m = d.stats.defaultCheckMode as QuizMode;
+        setQuizMode(m);
+        startRound(d.reviews, isStrict, m);
         // 选择题干扰项
         const p = await fetch("/api/practice");
         if (p.ok) {
@@ -84,60 +128,83 @@ function CheckInner() {
       if (r.status === 403) return router.replace("/parent"); // 家长无学习权限
       const d = await r.json();
       setWords(d.words);
-      preloadAudio(d.words.map((w: QuizWord) => w.audioWord));
       setDistractors(d.distractors);
-      // 强检查：跳过模式选择，每个词依次做拼写 + 选择
-      if (isStrict) setQuizMode("spell");
+      // 强检查：跳过模式选择，直接开始（拼写、选择两轮打散）
+      if (isStrict) {
+        setQuizMode("spell");
+        startRound(d.words, true, "spell");
+      } else {
+        preloadAudio(d.words.map((w: QuizWord) => w.audioWord));
+      }
     }
     setLoaded(true);
-  }, [isReview, router]);
+  }, [isReview, router, startRound]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // 生成选择题选项
+  // 生成选择题选项（依赖整个 task：新一轮重建 tasks，引用变化会触发重新生成）
   useEffect(() => {
-    if (!word || quizMode !== "choice") return;
-    const pool = distractors.filter((m) => m && m !== word.meaningCn);
+    if (!task || task.mode !== "choice") return;
+    const w = task.word;
+    const pool = distractors.filter((m) => m && m !== w.meaningCn);
     const picks = new Set<string>();
     while (picks.size < 3 && picks.size < pool.length) {
       picks.add(pool[Math.floor(Math.random() * pool.length)]);
     }
-    const all = [...picks, word.meaningCn].sort(() => Math.random() - 0.5);
+    const all = [...picks, w.meaningCn].sort(() => Math.random() - 0.5);
     setOptions(all);
     setWrongPicks([]);
-  }, [word, quizMode, distractors]);
+  }, [task, distractors]);
 
   useEffect(() => {
-    if (quizMode === "spell") inputRef.current?.focus();
-  }, [quizMode, idx]);
+    if (mode === "spell") inputRef.current?.focus();
+  }, [mode, idx]);
+
+  const markFailed = useCallback((wordId: string) => {
+    failedRef.current.add(wordId);
+  }, []);
 
   const next = useCallback(async () => {
-    if (idx + 1 >= words.length) {
-      if (isReview) {
-        // 复习完成，重新拉取确认门禁已清
-        const r = await fetch("/api/session");
-        const d = await r.json();
-        if (d.reviewsCleared) setReviewCleared(true);
-        else {
-          // 答错的词可能又到期（10分钟阶梯外的一般不会，但保底重载）
-          setWords(d.reviews);
-          setIdx(0);
-          if (strict) setQuizMode("spell");
-          return;
-        }
-      }
-      setFinished(true);
-    } else {
+    if (idx + 1 < tasks.length) {
       setIdx(idx + 1);
       setInput("");
       setSpellState("idle");
       setShowAnswer(false);
-      // 强检查：下一个词从拼写关重新开始
-      if (strict) setQuizMode("spell");
+      return;
     }
-  }, [idx, words.length, isReview, strict]);
+    // 本轮结束
+    if (isReview) {
+      // 复习：未通过的词循环再来一轮，直到全部通过
+      const failed = failedRef.current;
+      if (failed.size > 0) {
+        const retryWords = words.filter((w) => failed.has(w.id));
+        setRound((r) => r + 1);
+        startRound(retryWords, strict, quizMode ?? "spell");
+        return;
+      }
+      // 全部通过，重新拉取确认门禁已清
+      const r = await fetch("/api/session");
+      const d = await r.json();
+      if (d.reviewsCleared) {
+        setReviewCleared(true);
+      } else {
+        // 保底：仍有到期词（如之前跳过累积下来的），继续新一轮
+        setRound((r2) => r2 + 1);
+        startRound(d.reviews, strict, quizMode ?? "spell");
+        return;
+      }
+      return;
+    }
+    setFinished(true);
+  }, [idx, tasks.length, isReview, words, strict, quizMode, startRound]);
+
+  // 跳过复习：留痕（家长会看到），未复习的词仍会累积到下次复习
+  async function skipReview() {
+    const r = await fetch("/api/skip-review", { method: "POST" });
+    if (r.ok) setSkipped(true);
+  }
 
   // 拼写提交
   async function submitSpell() {
@@ -148,21 +215,12 @@ function CheckInner() {
       playDing();
       setSpellState("correct");
       await postProgress(word.id, "check-spell", "correct");
-      if (strict) {
-        // 强检查：拼写过了还有选择关
-        setTimeout(() => {
-          setQuizMode("choice");
-          setInput("");
-          setSpellState("idle");
-          setShowAnswer(false);
-        }, 700);
-      } else {
-        setTimeout(next, 700);
-      }
+      setTimeout(next, 700);
     } else {
       playBuzz();
       setSpellState("wrong");
       setShake((s) => s + 1);
+      markFailed(word.id);
       await postProgress(word.id, "check-spell", "wrong");
     }
   }
@@ -171,6 +229,7 @@ function CheckInner() {
   async function giveUp() {
     if (!word) return;
     setShowAnswer(true);
+    markFailed(word.id);
     await postProgress(word.id, "check-spell", "giveup");
   }
 
@@ -184,11 +243,28 @@ function CheckInner() {
     } else {
       playBuzz();
       setWrongPicks((p) => [...p, opt]);
+      markFailed(word.id);
       await postProgress(word.id, "check-choice", "wrong");
     }
   }
 
   if (!loaded) return <div className="p-10 text-center text-black/40">加载中…</div>;
+
+  if (skipped) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-lg p-10 text-center max-w-md">
+          <div className="text-5xl mb-4">⏭️</div>
+          <h2 className="font-bold text-xl mb-2">已跳过本次复习</h2>
+          <p className="text-black/60 mb-2">这次跳过会记录在家长后台。</p>
+          <p className="text-orange-500/90 text-sm mb-6">未复习的单词不会消失，会累积到下次复习环节，记得补上哦。</p>
+          <Link href="/learn" className="inline-block bg-blue-500 text-white rounded-xl px-8 py-3 font-bold hover:opacity-90">
+            先去背新词 →
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (reviewCleared) {
     return (
@@ -211,7 +287,10 @@ function CheckInner() {
       <div className="min-h-[70vh] flex items-center justify-center">
         <div className="flex flex-col sm:flex-row gap-6 px-4">
           <button
-            onClick={() => setQuizMode("spell")}
+            onClick={() => {
+              setQuizMode("spell");
+              startRound(words, false, "spell");
+            }}
             className="bg-white rounded-2xl shadow-lg p-10 w-64 max-w-full hover:shadow-xl transition-shadow text-center"
           >
             <div className="text-4xl mb-3">⌨️</div>
@@ -219,7 +298,10 @@ function CheckInner() {
             <div className="text-sm text-black/50 mt-2">看中文意思，拼出单词</div>
           </button>
           <button
-            onClick={() => setQuizMode("choice")}
+            onClick={() => {
+              setQuizMode("choice");
+              startRound(words, false, "choice");
+            }}
             className="bg-white rounded-2xl shadow-lg p-10 w-64 max-w-full hover:shadow-xl transition-shadow text-center"
           >
             <div className="text-4xl mb-3">🎯</div>
@@ -258,15 +340,14 @@ function CheckInner() {
       <div className="w-full flex items-center justify-between text-sm text-black/50">
         <span>
           {isReview ? "📅 复习检查" : "💪 自由练习"} ·{" "}
-          {strict
-            ? `强检查 ${quizMode === "spell" ? "拼写(1/2)" : "选择(2/2)"}`
-            : quizMode === "spell" ? "拼写" : "选择"}
+          {strict ? `强检查 ${mode === "spell" ? "拼写" : "选择"}` : mode === "spell" ? "拼写" : "选择"}
+          {isReview && round > 1 && <span className="text-orange-500"> · 第 {round} 轮（未通过循环复习）</span>}
         </span>
-        <span>{idx + 1} / {words.length}</span>
+        <span>{idx + 1} / {tasks.length}</span>
       </div>
 
-      <div key={`${word.id}-${shake}`} className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 min-h-[22rem] flex flex-col items-center justify-center gap-8 ${shake > 0 && spellState === "wrong" ? "animate-shake" : ""}`}>
-        {quizMode === "spell" ? (
+      <div key={`${word.id}-${mode}-${shake}`} className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 min-h-[22rem] flex flex-col items-center justify-center gap-8 ${shake > 0 && spellState === "wrong" ? "animate-shake" : ""}`}>
+        {mode === "spell" ? (
           <>
             <div className="text-center">
               <div className="text-black/40 text-sm mb-2">{word.pos}</div>
@@ -347,6 +428,15 @@ function CheckInner() {
           </>
         )}
       </div>
+
+      {isReview && allowSkip && (
+        <button
+          onClick={skipReview}
+          className="text-sm text-black/40 underline hover:text-orange-500"
+        >
+          跳过本次复习（家长会看到记录，未复习的词会累积到下次）
+        </button>
+      )}
     </div>
   );
 }

@@ -33,7 +33,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       result: l.result,
       createdAt: l.createdAt,
     })),
-    skips: skips.map((s) => ({ id: s.id, createdAt: s.createdAt })),
+    skips: skips.map((s) => ({ id: s.id, count: s.count, createdAt: s.createdAt })),
   });
 }
 

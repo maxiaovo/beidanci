@@ -4,17 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
+import BookWheel from "@/components/BookWheel";
 
 interface BookInfo {
   id: string;
   name: string;
   status: string;
-  audioDone: number;
-  audioTotal: number;
-  total: number;
-  learned: number;
-  mastered: number;
-  units: number;
 }
 
 interface SessionPlan {
@@ -57,7 +52,8 @@ interface PlanSetting {
   fractionDen: number;
 }
 
-const COVERS = ["#A8D8EA", "#FFB7B2", "#FFDAC1", "#E2F0CB", "#C7CEEA", "#FFD6E0"];
+// 轮盘里"系统自动安排"的固定选项 id
+const AUTO = "auto";
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
@@ -86,6 +82,7 @@ export default function Dashboard() {
   const [showPlanSettings, setShowPlanSettings] = useState(false);
   const [savingPlans, setSavingPlans] = useState(false);
   const [plansSaved, setPlansSaved] = useState(false);
+  const [selectedBook, setSelectedBook] = useState<string>(AUTO); // 轮盘选中的书
   const router = useRouter();
 
   useEffect(() => {
@@ -149,125 +146,112 @@ export default function Dashboard() {
   }
 
   const due = session?.stats.dueCount ?? 0;
-  const cleared = session?.reviewsCleared ?? true;
   const plans = session?.plans ?? [];
   const readyBooks = books.filter((b) => b.status === "ready");
+
+  // 轮盘选项：系统自动安排 + 所有可用单词书
+  const wheelItems = [
+    { id: AUTO, label: "🔄 系统自动安排" },
+    ...readyBooks.map((b) => ({ id: b.id, label: b.name })),
+  ];
+
+  // 选中项的说明文字
+  let selectedDesc: string;
+  if (selectedBook === AUTO) {
+    selectedDesc =
+      plans.length > 0
+        ? plans
+            .map((p) => `${p.bookName} ${p.quota === 0 ? "已完成" : `今日 ${p.doneToday}/${p.quota}`}`)
+            .join(" · ")
+        : `按每日新词目标自动安排（${session?.stats.dailyNewTarget ?? 0} 词）`;
+  } else {
+    const plan = plans.find((p) => p.bookId === selectedBook);
+    selectedDesc = plan
+      ? `${planDesc(plan)} · ${plan.quota === 0 ? "已完成" : `今日 ${plan.doneToday}/${plan.quota}`}${plan.remaining === 0 && plan.quota > 0 ? " · 今日完成" : ""}`
+      : "本书暂无每日计划，将按每日新词目标安排";
+  }
+
+  const learnHref = selectedBook === AUTO ? "/learn" : `/learn?book=${selectedBook}`;
 
   return (
     <div className="max-w-4xl mx-auto p-6 flex flex-col gap-8">
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
       {/* 今日任务 */}
       <section className="bg-white rounded-2xl shadow p-6">
-        <h2 className="font-bold text-lg mb-4">今日任务</h2>
-        {plans.length === 0 ? (
-          <>
-            <div className="flex items-center gap-6 flex-wrap">
-              <div className="text-center">
-                <div className={`text-4xl font-bold ${due > 0 ? "text-orange-500" : "text-green-500"}`}>{due}</div>
-                <div className="text-sm text-black/50 mt-1">待复习</div>
-              </div>
-              <div className="text-2xl text-black/20">→</div>
-              <div className="text-center">
-                <div className={`text-4xl font-bold ${cleared ? "text-blue-500" : "text-black/20"}`}>
-                  {session?.stats.dailyNewTarget ?? 0}
-                </div>
-                <div className="text-sm text-black/50 mt-1">新词目标</div>
-              </div>
-              <div className="flex-1" />
-              <div className="flex gap-3">
-                {due > 0 ? (
-                  <Link
-                    href="/check?mode=review"
-                    className="bg-orange-500 text-white rounded-xl px-6 py-3 font-bold hover:opacity-90"
-                  >
-                    先复习 {due} 词 →
-                  </Link>
-                ) : (
-                  <Link
-                    href="/learn"
-                    className="bg-blue-500 text-white rounded-xl px-6 py-3 font-bold hover:opacity-90"
-                  >
-                    开始背新词 →
-                  </Link>
-                )}
-                <Link
-                  href="/check"
-                  className="border border-black/15 rounded-xl px-6 py-3 font-medium hover:bg-black/5"
-                >
-                  自由检查
-                </Link>
-              </div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-lg">今日任务</h2>
+          <button
+            onClick={() => setShowPlanSettings(true)}
+            title="每日任务设置"
+            className="text-xl text-black/40 hover:text-black/70 hover:rotate-45 transition-transform"
+          >
+            ⚙️
+          </button>
+        </div>
+
+        {due > 0 && (
+          <div className="flex items-center gap-4 flex-wrap mb-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-orange-500">{due}</div>
+              <div className="text-sm text-black/50 mt-1">待复习</div>
             </div>
-            {due > 0 && (
-              <p className="text-sm text-orange-500/80 mt-3">
-                按记忆曲线，先通过全部复习检查才能解锁新词哦
-              </p>
-            )}
-          </>
+            <Link
+              href="/check?mode=review"
+              className="bg-orange-500 text-white rounded-xl px-5 py-2.5 font-bold hover:opacity-90"
+            >
+              先复习 {due} 词 →
+            </Link>
+            <p className="text-sm text-orange-500/80 w-full">
+              按记忆曲线，先通过全部复习检查才能解锁新词哦
+            </p>
+          </div>
+        )}
+
+        {readyBooks.length === 0 ? (
+          <div className="text-center text-black/40 py-6">
+            还没有可用的单词书，<Link href="/import" className="text-blue-500 underline">去导入一本</Link>吧
+          </div>
         ) : (
           <>
-            {due > 0 && (
-              <div className="flex items-center gap-4 flex-wrap mb-4">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-orange-500">{due}</div>
-                  <div className="text-sm text-black/50 mt-1">待复习</div>
-                </div>
-                <Link
-                  href="/check?mode=review"
-                  className="bg-orange-500 text-white rounded-xl px-5 py-2.5 font-bold hover:opacity-90"
-                >
-                  先复习 {due} 词 →
-                </Link>
-                <p className="text-sm text-orange-500/80 w-full">
-                  按记忆曲线，先通过全部复习检查才能解锁新词哦
-                </p>
-              </div>
-            )}
-            <div className="flex flex-col divide-y divide-black/5">
-              {plans.map((p) => (
-                <div key={p.bookId} className="flex items-center gap-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold truncate">{p.bookName}</div>
-                    <div className="text-sm text-black/50">{planDesc(p)}</div>
-                  </div>
-                  <div className={`text-sm font-medium ${p.quota === 0 ? "text-green-500" : "text-black/60"}`}>
-                    {p.quota === 0 ? "已完成" : `今日 ${p.doneToday}/${p.quota}`}
-                  </div>
-                  {p.remaining === 0 ? (
-                    <span className="bg-black/10 text-black/40 rounded-xl px-5 py-2.5 font-bold">
-                      今日完成
-                    </span>
-                  ) : (
-                    <Link
-                      href={`/learn?book=${p.bookId}`}
-                      className="bg-blue-500 text-white rounded-xl px-5 py-2.5 font-bold hover:opacity-90"
-                    >
-                      学习 →
-                    </Link>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 text-right">
-              <Link href="/check" className="text-sm text-black/50 hover:underline">
-                自由检查 →
+            <BookWheel items={wheelItems} value={selectedBook} onChange={setSelectedBook} />
+            <div className="text-center text-sm text-black/50 mt-2 min-h-5">{selectedDesc}</div>
+            <div className="flex justify-center gap-3 mt-4">
+              <Link
+                href={learnHref}
+                className="bg-blue-500 text-white rounded-xl px-8 py-3 font-bold hover:opacity-90"
+              >
+                开始背单词 →
+              </Link>
+              <Link
+                href="/check"
+                className="border border-black/15 rounded-xl px-6 py-3 font-medium hover:bg-black/5"
+              >
+                自由检查
               </Link>
             </div>
           </>
         )}
       </section>
 
-      {/* 每日任务设置 */}
-      <section className="bg-white rounded-2xl shadow p-6">
-        <button
-          onClick={() => setShowPlanSettings((v) => !v)}
-          className="flex items-center justify-between w-full"
+      {/* 每日任务设置（齿轮弹窗） */}
+      {showPlanSettings && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => setShowPlanSettings(false)}
         >
-          <h2 className="font-bold text-lg">每日任务设置</h2>
-          <span className="text-sm text-black/40">{showPlanSettings ? "收起 ▲" : "展开 ▼"}</span>
-        </button>
-        {showPlanSettings && (
-          <div className="mt-4">
+          <div
+            className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg">每日任务设置</h2>
+              <button
+                onClick={() => setShowPlanSettings(false)}
+                className="text-black/40 hover:text-black/70 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
             {readyBooks.length === 0 ? (
               <div className="text-black/40 text-sm">还没有可用的单词书</div>
             ) : (
@@ -319,56 +303,8 @@ export default function Dashboard() {
               {plansSaved && <span className="text-sm text-green-500">已保存</span>}
             </div>
           </div>
-        )}
-      </section>
-
-      {/* 我的单词书 */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-lg">我的单词书</h2>
-          <Link href="/import" className="text-sm text-blue-500 hover:underline">+ 导入单词书</Link>
         </div>
-        {books.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow p-10 text-center text-black/40">
-            还没有单词书，<Link href="/import" className="text-blue-500 underline">去导入一本</Link>吧
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {books.map((b, i) => (
-              <Link
-                key={b.id}
-                href={`/words/${b.id}`}
-                className="rounded-2xl p-5 shadow hover:shadow-md transition-shadow flex flex-col gap-2"
-                style={{ background: COVERS[i % COVERS.length] }}
-              >
-                <div className="font-bold text-lg leading-snug">{b.name}</div>
-                <div className="text-sm text-black/50">{b.units} 个单元 · {b.total} 词</div>
-                {b.status === "processing" || b.status === "queued" ? (
-                  <div className="text-sm text-black/60">
-                    {b.status === "queued" ? "排队等待处理…" : `导入中… 音频 ${b.audioDone}/${b.audioTotal}`}
-                  </div>
-                ) : b.status === "error" ? (
-                  <div className="text-sm text-red-600">导入出错</div>
-                ) : b.status === "stopped" ? (
-                  <div className="text-sm text-black/50">已停止导入（{b.total} 词可用）</div>
-                ) : (
-                  <div className="mt-auto">
-                    <div className="h-2 rounded-full bg-white/60 overflow-hidden">
-                      <div
-                        className="h-full bg-foreground/70 rounded-full"
-                        style={{ width: b.total ? `${(b.learned / b.total) * 100}%` : "0%" }}
-                      />
-                    </div>
-                    <div className="text-xs text-black/50 mt-1">
-                      已学 {b.learned}/{b.total} · 掌握 {b.mastered}
-                    </div>
-                  </div>
-                )}
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+      )}
     </div>
   );
 }

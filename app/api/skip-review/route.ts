@@ -18,7 +18,11 @@ export async function POST() {
     where: { userId: user.id, createdAt: { gte: start } },
   });
   if (!existing) {
-    await prisma.reviewSkip.create({ data: { userId: user.id } });
+    // 记录跳过时的待复习词数，便于家长后台查看；这些词不会被清掉，会累积到下次复习
+    const dueCount = await prisma.wordProgress.count({
+      where: { userId: user.id, nextReviewAt: { lte: new Date() } },
+    });
+    await prisma.reviewSkip.create({ data: { userId: user.id, count: dueCount } });
   }
   return NextResponse.json({ ok: true });
 }

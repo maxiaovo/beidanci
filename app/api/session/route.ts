@@ -159,6 +159,23 @@ export async function GET(req: Request) {
         newWords.push(...fresh.map((w) => serializeWord(w as never)));
       }
     }
+
+    // 兜底：用户主动选了一本没有每日计划的书，按每日新词目标下发该书的新词
+    if (reviewsCleared && bookFilterId && !plans.some((p) => p.bookId === bookFilterId)) {
+      const remaining = Math.max(0, user.dailyNewTarget - learnedToday);
+      if (remaining > 0) {
+        const fresh = await prisma.word.findMany({
+          where: {
+            id: learnedIds.length ? { notIn: learnedIds } : undefined,
+            unit: { bookId: bookFilterId },
+          },
+          orderBy: [{ unit: { orderIndex: "asc" } }, { orderIndex: "asc" }],
+          take: remaining,
+          select: wordSelect,
+        });
+        newWords.push(...fresh.map((w) => serializeWord(w as never)));
+      }
+    }
   } else if (reviewsCleared) {
     // 无计划：保持原全局 dailyNewTarget 行为
     const remaining = Math.max(0, user.dailyNewTarget - learnedToday);
