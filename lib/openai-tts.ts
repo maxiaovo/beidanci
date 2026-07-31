@@ -1,5 +1,5 @@
 // 千问（DashScope）TTS 原生接口：POST {baseUrl}（生成端点），
-// body: { model, input: { text, voice, language_type }, instructions? }
+// body: { model, input: { text, voice, language_type, instructions? } }
 // 响应 JSON 里 output.audio.url 是 24h 有效的音频地址，需再下载得到 WAV 二进制
 // 适配千问 Qwen3-TTS；合成约实时级耗时，超时给足 300s
 import type { TTSConfig } from "./settings";
@@ -19,16 +19,19 @@ export async function synthesizeSpeech(
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
 
   const voice = opts?.voice || cfg.voice;
+  const input: Record<string, unknown> = {
+    text,
+    voice,
+    language_type: "English", // 本应用只合成英语，显式指定语种提升发音质量
+  };
+  // instruction 仅对 qwen3-tts-instruct-* 生效；qwen3-tts-flash 接受但不报错（被忽略）。
+  // 按千问官方 HTTP 规范（platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts），
+  // instructions 须嵌套在 input 下，而非顶层。
+  if (opts?.instruction) input.instructions = opts.instruction;
   const body: Record<string, unknown> = {
     model: cfg.model,
-    input: {
-      text,
-      voice,
-      language_type: "English", // 本应用只合成英语，显式指定语种提升发音质量
-    },
+    input,
   };
-  // instruction 仅对 qwen3-tts-instruct-* 生效；qwen3-tts-flash 接受但不报错（被忽略）
-  if (opts?.instruction) body.instructions = opts.instruction;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {

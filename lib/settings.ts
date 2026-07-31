@@ -119,7 +119,7 @@ export async function getAIConfig(): Promise<AIConfig> {
 
 // ---- TTS 语音配置（Setting 表 > 环境变量 > 默认值）----
 // 千问（DashScope）TTS 原生接口：POST {baseUrl}（生成端点）
-// body: { model, input: { text, voice, language_type }, instructions? }
+// body: { model, input: { text, voice, language_type, instructions? } }
 // 响应 JSON 里 output.audio.url 是 24h 有效的音频地址，需再下载 WAV 二进制
 // 注意：千问 TTS 不是 OpenAI 兼容 /audio/speech，切勿用通用 OpenAI 适配层调用
 export const DEFAULT_TTS_BASE_URL =
