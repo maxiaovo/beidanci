@@ -69,13 +69,8 @@ interface AISettings {
 interface TTSSettings {
   baseUrl: string;
   apiKey: string;
-  qwenMode: string;
-  qwenVoice: string;
-  qwenVoices: string[]; // 音色池：勾选多个后导入时随机使用
-  qwenInstruct: string;
-  qwenLanguage: string;
-  qwenTemperature: string;
-  qwenMaxTokens: string;
+  model: string;
+  voice: string;
   overridden: Record<string, boolean>;
 }
 
@@ -163,15 +158,12 @@ export default function AdminPage() {
   const [aiMsg, setAiMsg] = useState("");
   const [tts, setTts] = useState<TTSSettings | null>(null);
   const [ttsMsg, setTtsMsg] = useState("");
-  // 本地 Qwen3-TTS 服务连接状态（health 探测）
+  // TTS 服务连接状态（OpenAI 兼容接口探测）
   const [ttsHealth, setTtsHealth] = useState<{ state: "idle" | "checking" | "ok" | "fail"; detail: string }>({
     state: "idle",
     detail: "",
   });
-  // qwen 音色池：从服务拉取的可用音色 + 试听状态
-  const [voicePool, setVoicePool] = useState<{ voices: string[]; speakers: string[] } | null>(null);
-  const [voicesLoading, setVoicesLoading] = useState(false);
-  const [voiceMsg, setVoiceMsg] = useState("");
+  // 试听状态
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [audioWords, setAudioWords] = useState<AudioWord[] | null>(null);
@@ -291,7 +283,7 @@ export default function AdminPage() {
     setTimeout(() => setAiMsg(""), 3000);
   }
 
-  // 探测本地 Qwen3-TTS 服务连接状态（按面板当前 Base URL / Token，可不先保存）
+  // 探测 TTS 服务连接状态（按面板当前 Base URL / Token，可不先保存）
   async function checkTtsHealth(t: TTSSettings | null = tts) {
     if (!t) {
       setTtsHealth({ state: "idle", detail: "" });
@@ -306,10 +298,7 @@ export default function AdminPage() {
       });
       const d = await r.json();
       if (r.ok && d.ok) {
-        setTtsHealth({
-          state: "ok",
-          detail: `${d.voices.length} 个克隆音色 · ${d.speakers.length} 个预设说话人 · 支持模式 ${(d.modes as string[]).join(" / ")}`,
-        });
+        setTtsHealth({ state: "ok", detail: d.baseUrl || "" });
       } else {
         setTtsHealth({ state: "fail", detail: d.error || "连接失败" });
       }
@@ -334,13 +323,8 @@ export default function AdminPage() {
         body: JSON.stringify({
           ttsBaseUrl: tts.baseUrl,
           ttsApiKey: tts.apiKey,
-          ttsQwenMode: tts.qwenMode,
-          ttsQwenVoice: tts.qwenVoice,
-          ttsQwenVoices: tts.qwenVoices,
-          ttsQwenInstruct: tts.qwenInstruct,
-          ttsQwenLanguage: tts.qwenLanguage,
-          ttsQwenTemperature: tts.qwenTemperature,
-          ttsQwenMaxTokens: tts.qwenMaxTokens,
+          ttsModel: tts.model,
+          ttsVoice: tts.voice,
         }),
       });
       const d = await r.json().catch(() => ({}));
@@ -357,37 +341,11 @@ export default function AdminPage() {
     setTimeout(() => setTtsMsg(""), 5000);
   }
 
-  // 从 Qwen3-TTS 服务拉取可用音色列表（按面板当前 Base URL / Token，可不先保存）
-  async function fetchVoiceList() {
-    if (!tts) return;
-    setVoicesLoading(true);
-    setVoiceMsg("");
-    try {
-      const r = await fetch("/api/admin/tts-voices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: tts.baseUrl, apiKey: tts.apiKey }),
-      });
-      const d = await r.json();
-      if (!r.ok) {
-        setVoiceMsg(d.error || "获取音色列表失败");
-        setVoicePool(null);
-      } else {
-        setVoicePool({ voices: d.voices ?? [], speakers: d.speakers ?? [] });
-      }
-    } catch {
-      setVoiceMsg("获取音色列表失败");
-      setVoicePool(null);
-    }
-    setVoicesLoading(false);
-  }
-
-  // 试听某个音色：用面板当前（可未保存）的语调设置现场合成样例并播放
-  async function previewVoice(name: string, kind: "word" | "sentence") {
+  // 试听当前音色：用面板当前（可未保存）的设置现场合成样例并播放
+  async function previewVoice(kind: "word" | "sentence") {
     if (!tts || previewKey) return;
-    const key = `${name}:${kind}`;
-    setPreviewKey(key);
-    setVoiceMsg("");
+    setPreviewKey(kind);
+    setTtsMsg("");
     try {
       const r = await fetch("/api/admin/tts-preview", {
         method: "POST",
@@ -395,17 +353,14 @@ export default function AdminPage() {
         body: JSON.stringify({
           baseUrl: tts.baseUrl,
           apiKey: tts.apiKey,
-          mode: tts.qwenMode,
-          voice: name,
-          instruct: tts.qwenInstruct,
-          language: tts.qwenLanguage,
-          temperature: tts.qwenTemperature,
+          model: tts.model,
+          voice: tts.voice,
           kind,
         }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        setVoiceMsg(d.error || "试听合成失败");
+        setTtsMsg(d.error || "试听合成失败");
         return;
       }
       const url = URL.createObjectURL(await r.blob());
@@ -414,19 +369,10 @@ export default function AdminPage() {
       previewAudioRef.current = a;
       await a.play().catch(() => {});
     } catch {
-      setVoiceMsg("试听合成失败");
+      setTtsMsg("试听合成失败");
     } finally {
       setPreviewKey(null);
     }
-  }
-
-  // 勾选 / 取消勾选音色池中的音色
-  function togglePoolVoice(name: string) {
-    if (!tts) return;
-    const set = new Set(tts.qwenVoices);
-    if (set.has(name)) set.delete(name);
-    else set.add(name);
-    setTts({ ...tts, qwenVoices: [...set] });
   }
 
   // 播放音频（加时间戳避免重新生成后命中浏览器缓存）
@@ -1674,9 +1620,9 @@ export default function AdminPage() {
             }`}
           >
             <span className="font-bold">
-              {ttsHealth.state === "checking" && "⏳ 正在检测本地 Qwen3-TTS 服务…"}
-              {ttsHealth.state === "ok" && "🟢 已连接本地 Qwen3-TTS，服务就绪"}
-              {ttsHealth.state === "fail" && "🔴 未连接到本地 Qwen3-TTS"}
+              {ttsHealth.state === "checking" && "⏳ 正在检测 TTS 服务…"}
+              {ttsHealth.state === "ok" && "🟢 已连接 TTS 服务"}
+              {ttsHealth.state === "fail" && "🔴 未连接到 TTS 服务"}
               {ttsHealth.state === "idle" && "未检测"}
             </span>
             {ttsHealth.detail && <span className="opacity-80">{ttsHealth.detail}</span>}
@@ -1692,12 +1638,12 @@ export default function AdminPage() {
           <div className="flex flex-col gap-4 max-w-3xl">
             <div className="flex gap-4 flex-wrap">
               <label className="text-sm text-black/60 flex-1 min-w-56">
-                Base URL
+                Base URL（OpenAI 兼容接口，需含 /v1）
                 <input
                   value={tts.baseUrl}
                   onChange={(e) => setTts({ ...tts, baseUrl: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="http://localhost:8765"
+                  placeholder="https://api.openai.com/v1"
                 />
               </label>
               <label className="text-sm text-black/60 flex-1 min-w-56">
@@ -1712,158 +1658,45 @@ export default function AdminPage() {
                 />
               </label>
             </div>
-            <>
-                <div className="flex gap-4 flex-wrap">
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    模式（mode）
-                    <select
-                      value={tts.qwenMode}
-                      onChange={(e) => setTts({ ...tts, qwenMode: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono bg-white"
-                    >
-                      <option value="clone">clone（克隆音色）</option>
-                      <option value="custom">custom（预设说话人）</option>
-                      <option value="design">design（文字描述音色）</option>
-                    </select>
-                  </label>
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    {tts.qwenMode === "custom" ? "预设说话人（speaker）" : "克隆音色（voice）"}
-                    <input
-                      value={tts.qwenVoice}
-                      onChange={(e) => setTts({ ...tts, qwenVoice: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                      placeholder="matthew-full"
-                    />
-                  </label>
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    语言（language）
-                    <input
-                      value={tts.qwenLanguage}
-                      onChange={(e) => setTts({ ...tts, qwenLanguage: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                      placeholder="English"
-                    />
-                  </label>
-                </div>
-                <div className="flex gap-4 flex-wrap">
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    温度（temperature，0=最稳定）
-                    <input
-                      value={tts.qwenTemperature}
-                      onChange={(e) => setTts({ ...tts, qwenTemperature: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                      placeholder="0"
-                    />
-                  </label>
-                  <label className="text-sm text-black/60 flex-1 min-w-56">
-                    最大 token（max_tokens）
-                    <input
-                      value={tts.qwenMaxTokens}
-                      onChange={(e) => setTts({ ...tts, qwenMaxTokens: e.target.value })}
-                      className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                      placeholder="2048"
-                    />
-                  </label>
-                </div>
-                <label className="text-sm text-black/60">
-                  instruct（语音语调：clone 为情绪注入，可留空；design 为音色描述，必填）
-                  <textarea
-                    value={tts.qwenInstruct}
-                    onChange={(e) => setTts({ ...tts, qwenInstruct: e.target.value })}
-                    rows={2}
-                    className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono text-xs"
-                    placeholder="留空 = 自然朗读"
-                  />
-                </label>
-                <div className="flex gap-2 flex-wrap -mt-2">
-                  <span className="text-xs text-black/40 py-1">快捷语调：</span>
-                  {[
-                    { label: "自然朗读", value: "" },
-                    { label: "活泼亲切", value: "用活泼亲切的语气朗读" },
-                    { label: "缓慢清晰", value: "用缓慢清晰的语气朗读，适合语言初学者" },
-                    { label: "兴奋高昂", value: "用兴奋高昂的语气朗读" },
-                  ].map((p) => (
-                    <button
-                      key={p.label}
-                      onClick={() => setTts({ ...tts, qwenInstruct: p.value })}
-                      className={`text-xs rounded-full px-3 py-1 border ${
-                        tts.qwenInstruct === p.value
-                          ? "border-accent bg-accent/10"
-                          : "border-black/15 hover:bg-black/5"
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-                {/* 音色池：试听 + 勾选多个随机使用 */}
-                {tts.qwenMode !== "design" && (
-                  <div className="border border-black/10 rounded-xl p-4 flex flex-col gap-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="text-sm text-black/60">
-                        音色池：勾选多个后，生成音频时随机使用选中的音色朗读单词和例句，避免单调；一个都不勾则固定用上面的音色
-                      </div>
-                      <button
-                        onClick={fetchVoiceList}
-                        disabled={voicesLoading}
-                        className="border border-black/15 rounded-lg px-3 py-1.5 text-sm hover:bg-black/5 disabled:opacity-50 shrink-0"
-                      >
-                        {voicesLoading ? "获取中…" : voicePool ? "刷新音色列表" : "获取音色列表"}
-                      </button>
-                    </div>
-                    {voiceMsg && <div className="text-sm text-red-500">{voiceMsg}</div>}
-                    {voicePool && (
-                      <div className="flex flex-col">
-                        {(tts.qwenMode === "custom" ? voicePool.speakers : voicePool.voices).map((name) => {
-                          const checked = tts.qwenVoices.includes(name);
-                          const busyWord = previewKey === `${name}:word`;
-                          const busySentence = previewKey === `${name}:sentence`;
-                          return (
-                            <div
-                              key={name}
-                              className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${checked ? "bg-accent/10" : ""}`}
-                            >
-                              <label className="flex items-center gap-2 flex-1 cursor-pointer text-sm font-mono min-w-0">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => togglePoolVoice(name)}
-                                  className="accent-foreground shrink-0"
-                                />
-                                <span className="truncate">{name}</span>
-                              </label>
-                              <button
-                                onClick={() => previewVoice(name, "word")}
-                                disabled={!!previewKey}
-                                className="text-xs border border-black/15 rounded-lg px-2 py-1 hover:bg-black/5 disabled:opacity-50 shrink-0"
-                                title="试听单词朗读"
-                              >
-                                {busyWord ? "合成中…" : "▶ 单词"}
-                              </button>
-                              <button
-                                onClick={() => previewVoice(name, "sentence")}
-                                disabled={!!previewKey}
-                                className="text-xs border border-black/15 rounded-lg px-2 py-1 hover:bg-black/5 disabled:opacity-50 shrink-0"
-                                title="试听例句朗读"
-                              >
-                                {busySentence ? "合成中…" : "▶ 例句"}
-                              </button>
-                            </div>
-                          );
-                        })}
-                        {(tts.qwenMode === "custom" ? voicePool.speakers : voicePool.voices).length === 0 && (
-                          <div className="text-sm text-black/40 px-2">该模式下服务未返回可用音色</div>
-                        )}
-                      </div>
-                    )}
-                    {tts.qwenVoices.length > 0 && (
-                      <div className="text-xs text-black/40">
-                        已选 {tts.qwenVoices.length} 个：{tts.qwenVoices.join("、")}（保存后生效）
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
+            <div className="flex gap-4 flex-wrap">
+              <label className="text-sm text-black/60 flex-1 min-w-56">
+                模型（model）
+                <input
+                  value={tts.model}
+                  onChange={(e) => setTts({ ...tts, model: e.target.value })}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                  placeholder="tts-1"
+                />
+              </label>
+              <label className="text-sm text-black/60 flex-1 min-w-56">
+                音色（voice）
+                <input
+                  value={tts.voice}
+                  onChange={(e) => setTts({ ...tts, voice: e.target.value })}
+                  className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
+                  placeholder="alloy"
+                />
+              </label>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-black/60">试听：</span>
+              <button
+                onClick={() => previewVoice("word")}
+                disabled={!!previewKey}
+                className="text-sm border border-black/15 rounded-lg px-3 py-1.5 hover:bg-black/5 disabled:opacity-50"
+                title="试听单词朗读"
+              >
+                {previewKey === "word" ? "合成中…" : "▶ 单词"}
+              </button>
+              <button
+                onClick={() => previewVoice("sentence")}
+                disabled={!!previewKey}
+                className="text-sm border border-black/15 rounded-lg px-3 py-1.5 hover:bg-black/5 disabled:opacity-50"
+                title="试听例句朗读"
+              >
+                {previewKey === "sentence" ? "合成中…" : "▶ 例句"}
+              </button>
+            </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={saveTTS}
@@ -1878,7 +1711,7 @@ export default function AdminPage() {
               )}
             </div>
             <p className="text-xs text-black/40">
-              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。TTS 指向本地 Qwen3-TTS 服务（默认 http://localhost:8765），服务器需能访问该地址才能在线生成。
+              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。TTS 走 OpenAI 兼容接口（POST /v1/audio/speech），可接 OpenAI、火山引擎、阿里百炼等兼容服务，服务器需能访问该地址才能在线生成。
             </p>
           </div>
         </section>

@@ -60,22 +60,13 @@ export async function PATCH(req: Request) {
     aiPrompt: "ai_prompt",
     ttsBaseUrl: "tts_base_url",
     ttsApiKey: "tts_api_key",
-    ttsQwenMode: "tts_qwen_mode",
-    ttsQwenVoice: "tts_qwen_voice",
-    ttsQwenInstruct: "tts_qwen_instruct",
-    ttsQwenLanguage: "tts_qwen_language",
-    ttsQwenTemperature: "tts_qwen_temperature",
-    ttsQwenMaxTokens: "tts_qwen_max_tokens",
+    ttsModel: "tts_model",
+    ttsVoice: "tts_voice",
   };
   for (const [bodyKey, settingKey] of Object.entries(strFields)) {
     if (typeof body[bodyKey] === "string") {
       await setSetting(settingKey, body[bodyKey].trim());
     }
-  }
-  // qwen 音色池：字符串数组，存为 JSON；导入音频时从中随机抽取音色
-  if (Array.isArray(body.ttsQwenVoices)) {
-    const pool = body.ttsQwenVoices.filter((v: unknown) => typeof v === "string" && (v as string).trim());
-    await setSetting("tts_qwen_voices", JSON.stringify(pool));
   }
   if (typeof body.aiThinking === "boolean") {
     await setSetting("ai_thinking", body.aiThinking ? "true" : "false");

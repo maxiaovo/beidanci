@@ -118,71 +118,33 @@ export async function getAIConfig(): Promise<AIConfig> {
 }
 
 // ---- TTS 语音配置（Setting 表 > 环境变量 > 默认值）----
-// 只接本地 Qwen3-TTS 服务；生产服务器经 SSH 反向隧道以 127.0.0.1:8765 访问（见 README）
-export const DEFAULT_QWEN_BASE_URL = "http://localhost:8765";
-export const DEFAULT_QWEN_MODE = "clone"; // clone | custom | design
-export const DEFAULT_QWEN_VOICE = "matthew-full";
-export const DEFAULT_QWEN_LANGUAGE = "English";
+// 通用 OpenAI 兼容接口（POST {baseUrl}/v1/audio/speech），可接 OpenAI / 火山 / 阿里等兼容服务
+export const DEFAULT_TTS_BASE_URL = "https://api.openai.com/v1";
+export const DEFAULT_TTS_MODEL = "tts-1";
+export const DEFAULT_TTS_VOICE = "alloy";
 
 export interface TTSConfig {
   baseUrl: string;
   apiKey: string; // TTS_API_TOKEN（未启用鉴权可留空）
-  qwenMode: string;
-  qwenVoice: string; // clone: 音色名；custom: 预设说话人
-  qwenVoices: string[]; // 音色池：非空时每次合成随机抽取一个（避免单调），空则固定用 qwenVoice
-  qwenInstruct: string; // clone: 情绪注入（可空）；design: 音色描述（必填）
-  qwenLanguage: string;
-  qwenTemperature: string;
-  qwenMaxTokens: string;
+  model: string;
+  voice: string;
   overridden: Record<string, boolean>;
 }
 
-// 音色池存为 JSON 数组字符串；解析失败或为空时返回 []
-function parseVoicePool(raw: string | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.filter((v): v is string => typeof v === "string" && !!v.trim()).map((v) => v.trim());
-  } catch {
-    return [];
-  }
-}
-
 export async function getTTSConfig(): Promise<TTSConfig> {
-  const keys = [
-    "tts_base_url",
-    "tts_api_key",
-    "tts_qwen_mode",
-    "tts_qwen_voice",
-    "tts_qwen_voices",
-    "tts_qwen_instruct",
-    "tts_qwen_language",
-    "tts_qwen_temperature",
-    "tts_qwen_max_tokens",
-  ];
+  const keys = ["tts_base_url", "tts_api_key", "tts_model", "tts_voice"];
   const rows = await prisma.setting.findMany({ where: { key: { in: keys } } });
   const s = Object.fromEntries(rows.map((r) => [r.key, r.value as string]));
   return {
-    baseUrl: s.tts_base_url || process.env.QWEN_BASE_URL || DEFAULT_QWEN_BASE_URL,
+    baseUrl: s.tts_base_url || process.env.TTS_BASE_URL || DEFAULT_TTS_BASE_URL,
     apiKey: s.tts_api_key || process.env.TTS_API_TOKEN || "",
-    qwenMode: s.tts_qwen_mode || process.env.QWEN_TTS_MODE || DEFAULT_QWEN_MODE,
-    qwenVoice: s.tts_qwen_voice || process.env.QWEN_TTS_VOICE || DEFAULT_QWEN_VOICE,
-    qwenVoices: parseVoicePool(s.tts_qwen_voices),
-    qwenInstruct: s.tts_qwen_instruct || process.env.QWEN_TTS_INSTRUCT || "",
-    qwenLanguage: s.tts_qwen_language || process.env.QWEN_TTS_LANGUAGE || DEFAULT_QWEN_LANGUAGE,
-    qwenTemperature: s.tts_qwen_temperature || process.env.QWEN_TTS_TEMPERATURE || "0",
-    qwenMaxTokens: s.tts_qwen_max_tokens || process.env.QWEN_TTS_MAX_TOKENS || "2048",
+    model: s.tts_model || process.env.TTS_MODEL || DEFAULT_TTS_MODEL,
+    voice: s.tts_voice || process.env.TTS_VOICE || DEFAULT_TTS_VOICE,
     overridden: {
       baseUrl: !!s.tts_base_url,
       apiKey: !!s.tts_api_key,
-      qwenMode: !!s.tts_qwen_mode,
-      qwenVoice: !!s.tts_qwen_voice,
-      qwenVoices: !!s.tts_qwen_voices,
-      qwenInstruct: !!s.tts_qwen_instruct,
-      qwenLanguage: !!s.tts_qwen_language,
-      qwenTemperature: !!s.tts_qwen_temperature,
-      qwenMaxTokens: !!s.tts_qwen_max_tokens,
+      model: !!s.tts_model,
+      voice: !!s.tts_voice,
     },
   };
 }

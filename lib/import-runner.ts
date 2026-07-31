@@ -1,4 +1,4 @@
-// 导入后台任务：DeepSeek 分析 → 入库 → Qwen3-TTS 音频
+// 导入后台任务：DeepSeek 分析 → 入库 → TTS 音频
 // 全局串行队列：同一时间只处理一本书，其余排队等待
 // 断点续传：分析阶段跳过已入库单元，音频阶段只补缺失条目；原始文本存 Book.rawUnits
 import fs from "fs";
@@ -192,7 +192,7 @@ async function runImport(bookId: string, units: RawUnit[]) {
       // 断点续传：已有记录且文件存在的条目跳过，只补缺失的
       let audioWord = w.audioWord;
       if (!hasAudioFile(audioWord)) {
-        audioWord = await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic, out });
+        audioWord = await synthesize(w.text, `${w.id}_word.wav`, { out });
         logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音${voiceTag(out)}`, ok: !!audioWord });
         if (isStopped(bookId)) throw new Stopped();
       }
@@ -238,7 +238,7 @@ class Stopped extends Error {
   }
 }
 
-// 日志中标注本次合成使用的音色（qwen 音色池随机抽取时可见）
+// 日志中标注本次合成使用的音色
 function voiceTag(out: { voice?: string }): string {
   return out.voice ? `（${out.voice}）` : "";
 }

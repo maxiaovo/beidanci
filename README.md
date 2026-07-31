@@ -4,13 +4,9 @@
 
 导入支持**断点续传**：导入失败或被停止后，在单词书页 / 导入页点「继续导入」即可从断点恢复——已入库的单元跳过 AI 分析，已生成的音频不重复合成，只补缺失部分。管理页「音频资源」可单条 ↻ 重新生成，也可一键「补齐全部缺失音频」。
 
-## TTS 语音合成（Qwen3-TTS 本地服务）
+## TTS 语音合成（OpenAI 兼容接口）
 
-TTS 只接本地 Qwen3-TTS 服务，无云端备选引擎。
-
-- 本地 Qwen3-TTS 服务跑在开发者 Mac（`http://localhost:8765`，接口见 `qwen3-tts-mlx/API_FOR_KIMI.md`）。
-- 生产服务器通过 **SSH 反向隧道**访问它：Mac 上的 launchd 任务 `com.ledouniu.tts-tunnel`（`ssh -N -R 127.0.0.1:8765:127.0.0.1:8765 ledouniu.com`，plist 在 `~/Library/LaunchAgents/`，开机自启、断线自动重连，日志 `/tmp/tts-tunnel.log`）。因此线上 `tts_base_url` 配置为 `http://localhost:8765`。隧道中断时线上合成（导入新书、管理页 ↻ 重新生成）会失败；排查：Mac 上 `launchctl list | grep tts-tunnel`，服务器上 `curl -m 5 http://127.0.0.1:8765/`。
-- 音频整体替换流程：从生产库导出词表 → `node scripts/regen-audio-local.cjs --in words.json --out data/audio-qwen`（本地批量合成，跳过已有文件）→ `rsync -az data/audio-qwen/ ledouniu.com:ledouniu/vocab-app/data/audio/`。文件名不变所以数据库无需改动；替换后需递增 `lib/client.ts` 的 `AUDIO_VERSION` 强制浏览器刷新缓存。
+TTS 走通用 **OpenAI 兼容接口**（`POST {baseUrl}/v1/audio/speech`），可接 OpenAI、火山引擎、阿里百炼等兼容服务。在「管理 → 设置 → TTS 语音设置」中配置 Base URL / Token / 模型 / 音色，可在线检测连接与试听；也可用环境变量 `TTS_BASE_URL`、`TTS_API_TOKEN`、`TTS_MODEL`、`TTS_VOICE` 配置（Setting 表优先于环境变量）。
 
 ## 本地开发
 

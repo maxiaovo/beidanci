@@ -68,7 +68,7 @@ export async function POST(req: Request) {
   const data: { audioWord?: string; audioEx1?: string; audioEx2?: string } = {};
   const failed: string[] = [];
   if (kind === "word" || kind === "all") {
-    const a = await synthesize(w.text, `${w.id}_word.wav`, { phonetic: w.phonetic });
+    const a = await synthesize(w.text, `${w.id}_word.wav`);
     if (a) data.audioWord = a;
     else failed.push("word");
   }

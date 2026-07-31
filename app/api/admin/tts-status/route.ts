@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/session";
 import { getTTSConfig } from "@/lib/settings";
 
-// 探测本地 Qwen3-TTS 服务是否在线/就绪（GET /api/v1/health）
+// 探测 OpenAI 兼容 TTS 服务是否可用（GET {baseUrl}/models 验证连通性与鉴权）
 // body: { baseUrl?, apiKey? } —— 未填则用已保存的配置，方便保存前先测
 // 服务不可达也返回 200 + { ok: false }，由前端按 ok 字段展示状态
 export async function POST(req: Request) {
@@ -20,21 +20,15 @@ export async function POST(req: Request) {
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   try {
-    const res = await fetch(`${baseUrl}/api/v1/health`, { headers, signal: AbortSignal.timeout(6_000) });
+    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) {
       return NextResponse.json({ ok: false, error: `服务返回 HTTP ${res.status}（请检查 Base URL / Token）` });
     }
-    const d = await res.json();
-    return NextResponse.json({
-      ok: d.status === "ok",
-      baseUrl,
-      modes: d.modes ?? [],
-      voices: d.voices ?? [],
-      speakers: d.speakers ?? [],
-      sampleRate: d.sample_rate,
-      deepseekKey: !!d.deepseek_key,
-    });
+    return NextResponse.json({ ok: true, baseUrl });
   } catch {
-    return NextResponse.json({ ok: false, error: `无法连接 ${baseUrl}，请确认 Qwen3-TTS 服务已启动` });
+    return NextResponse.json({ ok: false, error: `无法连接 ${baseUrl}，请确认 TTS 服务地址正确且可访问` });
   }
 }
