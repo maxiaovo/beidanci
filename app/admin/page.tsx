@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SegmentWord from "@/components/SegmentWord";
+import FitWord from "@/components/FitWord";
 import { APPEARANCE_RANGES, DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appearance";
 
 interface UserRow {
@@ -1415,8 +1416,8 @@ export default function AdminPage() {
                 minHeight: `${Math.round(appearance.wordSizePx * 3)}px`,
               }}
             >
-              <div className="font-bold tracking-wide break-all" style={{ fontSize: clampPx(appearance.wordSizePx) }}>
-                apple
+              <div className="font-bold tracking-wide max-w-full text-center">
+                <FitWord text="apple" sizePx={appearance.wordSizePx} />
               </div>
               <div className="text-black/40 text-sm">/ˈæp.l/</div>
               <SegmentWord

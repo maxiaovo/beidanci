@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { playAudio, playDing, playBuzz, postProgress, preloadAudio } from "@/lib/client";
+import FitWord from "@/components/FitWord";
+import { DEFAULT_APPEARANCE, type LearnAppearance } from "@/lib/appearance";
 
 interface QuizWord {
   id: string;
@@ -62,6 +64,7 @@ function CheckInner() {
   const [reviewCleared, setReviewCleared] = useState(false);
   const [skipped, setSkipped] = useState(false); // 用户强行跳过了本次复习
   const [allowSkip, setAllowSkip] = useState(false);
+  const [appearance, setAppearance] = useState<LearnAppearance>(DEFAULT_APPEARANCE); // 全局外观（卡片宽度等）
   const [round, setRound] = useState(1); // 复习循环轮次：未通过的词进入下一轮
   const failedRef = useRef<Set<string>>(new Set()); // 本轮未通过（答错/放弃过）的词
 
@@ -98,10 +101,12 @@ function CheckInner() {
   );
 
   const load = useCallback(async () => {
-    // 站点配置（强检查开关）
+    // 站点配置（强检查开关、全局外观）
     const c = await fetch("/api/config");
-    const isStrict = c.ok ? !!(await c.json()).strictCheck : false;
+    const cfg = c.ok ? await c.json() : {};
+    const isStrict = !!cfg.strictCheck;
     setStrict(isStrict);
+    setAppearance({ ...DEFAULT_APPEARANCE, ...(cfg.appearance ?? {}) });
 
     if (isReview) {
       const r = await fetch("/api/session");
@@ -336,7 +341,10 @@ function CheckInner() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-4 sm:p-6 flex flex-col items-center gap-6">
+    <div
+      className="mx-auto p-4 sm:p-6 flex flex-col items-center gap-6"
+      style={{ width: `${appearance.cardWidthPct}%`, maxWidth: "100%" }}
+    >
       <div className="w-full flex items-center justify-between text-sm text-black/50">
         <span>
           {isReview ? "📅 复习检查" : "💪 自由练习"} ·{" "}
@@ -346,7 +354,11 @@ function CheckInner() {
         <span>{idx + 1} / {tasks.length}</span>
       </div>
 
-      <div key={`${word.id}-${mode}-${shake}`} className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 min-h-[22rem] flex flex-col items-center justify-center gap-8 ${shake > 0 && spellState === "wrong" ? "animate-shake" : ""}`}>
+      <div
+        key={`${word.id}-${mode}-${shake}`}
+        className={`w-full bg-white rounded-3xl shadow-lg p-6 sm:p-10 flex flex-col items-center justify-center gap-8 ${shake > 0 && spellState === "wrong" ? "animate-shake" : ""}`}
+        style={{ minHeight: `${Math.round(appearance.wordSizePx * 4.3)}px` }}
+      >
         {mode === "spell" ? (
           <>
             <div className="text-center">
@@ -355,7 +367,9 @@ function CheckInner() {
             </div>
             {showAnswer ? (
               <div className="text-center flex flex-col items-center gap-3">
-                <div className="text-4xl font-bold text-blue-600">{word.text}</div>
+                <div className="font-bold text-blue-600 max-w-full">
+                  <FitWord text={word.text} sizePx={36} />
+                </div>
                 <div className="text-black/40">{word.phonetic}</div>
                 <button
                   onClick={next}
@@ -397,12 +411,12 @@ function CheckInner() {
           </>
         ) : (
           <>
-            <div className="text-center flex items-center gap-3">
+            <div className="text-center flex items-center justify-center gap-3 w-full">
               <button
                 onClick={() => playAudio(word.audioWord ?? null)}
-                className="text-4xl sm:text-5xl font-bold hover:opacity-70 cursor-pointer break-all"
+                className="font-bold hover:opacity-70 cursor-pointer max-w-full"
               >
-                {word.text}
+                <FitWord text={word.text} sizePx={48} />
               </button>
             </div>
             <div className="text-black/40">{word.phonetic}</div>

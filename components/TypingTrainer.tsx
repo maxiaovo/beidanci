@@ -98,29 +98,49 @@ export default function TypingTrainer({
     return () => window.removeEventListener("keydown", onKey);
   }, [typed, target, allCorrect, isMatch, onComplete]);
 
+  // 按空格把目标文本分词：换行只发生在词与词之间，绝不从单词中间断开
+  const tokens: { word: boolean; indices: number[] }[] = [];
+  target.split("").forEach((c, i) => {
+    const isWord = c !== " ";
+    const last = tokens[tokens.length - 1];
+    if (last && last.word === isWord) last.indices.push(i);
+    else tokens.push({ word: isWord, indices: [i] });
+  });
+
+  const renderChar = (c: string, i: number) => {
+    let cls = "text-black/15"; // 未输入：浅灰
+    const isWrongSpace = wrongSpaces.has(i);
+    if (i < typed.length) {
+      cls = isMatch(typed[i], c) ? "text-black" : "text-red-500";
+    }
+    const isCursor = i === typed.length;
+    return (
+      <span key={i} className="relative">
+        <span className={isWrongSpace ? "" : cls}>{isWrongSpace ? "💩" : c === " " ? " " : c}</span>
+        {isCursor && (
+          <span className="cursor-blink absolute -bottom-1 left-0 right-0 h-1 bg-blue-400 rounded" />
+        )}
+      </span>
+    );
+  };
+
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-4 w-full">
       <div
         key={shake}
-        className={`${shake > 0 ? "animate-shake" : ""} font-mono font-bold leading-relaxed tracking-wider text-center max-w-3xl flex flex-wrap justify-center`}
+        className={`${shake > 0 ? "animate-shake" : ""} font-mono font-bold leading-relaxed tracking-wider text-center w-full flex flex-wrap justify-center`}
         style={{ fontSize: clampPx(fontSizePx) }}
       >
-        {target.split("").map((c, i) => {
-          let cls = "text-black/15"; // 未输入：浅灰
-          const isWrongSpace = wrongSpaces.has(i);
-          if (i < typed.length) {
-            cls = isMatch(typed[i], c) ? "text-black" : "text-red-500";
-          }
-          const isCursor = i === typed.length;
-          return (
-            <span key={i} className="relative">
-              <span className={isWrongSpace ? "" : cls}>{isWrongSpace ? "💩" : c === " " ? " " : c}</span>
-              {isCursor && (
-                <span className="cursor-blink absolute -bottom-1 left-0 right-0 h-1 bg-blue-400 rounded" />
-              )}
+        {tokens.map((t, ti) =>
+          t.word ? (
+            // 一个单词整体作为不可断行单元
+            <span key={ti} className="inline-flex whitespace-nowrap">
+              {t.indices.map((i) => renderChar(target[i], i))}
             </span>
-          );
-        })}
+          ) : (
+            t.indices.map((i) => renderChar(target[i], i))
+          ),
+        )}
         {typed.length === 0 && target.length === 0 && (
           <span className="text-black/30 text-2xl">{placeholder}</span>
         )}

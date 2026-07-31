@@ -9,6 +9,7 @@ import AudioButton from "@/components/AudioButton";
 import HighlightedSentence from "@/components/HighlightedSentence";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
 import { playAudio, preloadAudio, postProgress, StudyWord } from "@/lib/client";
+import FitWord from "@/components/FitWord";
 import { DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appearance";
 
 type Phase = "show" | "segments" | "ex1" | "ex2" | "trace" | "traceEx1" | "traceEx2";
@@ -291,7 +292,6 @@ function LearnInner() {
 
   if (!word) return null;
 
-  const wordStyle = { fontSize: clampPx(appearance.wordSizePx) };
   const sentenceStyle = { fontSize: clampPx(appearance.sentenceSizePx) };
   const sentenceCnStyle = { fontSize: `${appearance.sentenceCnSizePx}px` };
 
@@ -335,11 +335,10 @@ function LearnInner() {
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className="font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer break-all"
-              style={wordStyle}
+              className="font-bold tracking-wide hover:opacity-70 transition-opacity cursor-pointer max-w-full"
               title="点击播放读音"
             >
-              {word.text}
+              <FitWord text={word.text} sizePx={appearance.wordSizePx} />
             </button>
             <div className="text-black/40 text-xl">{word.phonetic}</div>
           </>
@@ -363,12 +362,11 @@ function LearnInner() {
           <>
             <button
               onClick={() => playAudio(word.audioWord)}
-              className="font-bold hover:opacity-70 cursor-pointer break-all"
-              style={wordStyle}
+              className="font-bold hover:opacity-70 cursor-pointer max-w-full"
             >
-              {word.text}
+              <FitWord text={word.text} sizePx={appearance.wordSizePx} />
             </button>
-            <div className="flex flex-col gap-6 w-full max-w-4xl">
+            <div className="flex flex-col gap-6 w-full">
               <div>
                 <button
                   onClick={() => playAudio(word.audioEx1)}
