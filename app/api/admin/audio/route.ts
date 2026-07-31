@@ -65,20 +65,26 @@ export async function POST(req: Request) {
   const w = await prisma.word.findUnique({ where: { id: wordId } });
   if (!w) return NextResponse.json({ error: "单词不存在" }, { status: 404 });
 
+  // 可选：临时指令（覆盖默认 instruction）/ 替代拼写（仅影响读音，不改单词文本）
+  const regenOpts = {
+    instruction: typeof body.instruction === "string" && body.instruction.trim() ? body.instruction.trim() : undefined,
+    altText: typeof body.altText === "string" && body.altText.trim() ? body.altText.trim() : undefined,
+  };
+
   const data: { audioWord?: string; audioEx1?: string; audioEx2?: string } = {};
   const failed: string[] = [];
   if (kind === "word" || kind === "all") {
-    const a = await synthesize(w.text, `${w.id}_word.wav`);
+    const a = await synthesize(w.text, `${w.id}_word.wav`, regenOpts);
     if (a) data.audioWord = a;
     else failed.push("word");
   }
   if (kind === "ex1" || kind === "all") {
-    const a = await synthesize(w.example1, `${w.id}_ex1.wav`);
+    const a = await synthesize(w.example1, `${w.id}_ex1.wav`, regenOpts);
     if (a) data.audioEx1 = a;
     else failed.push("ex1");
   }
   if (kind === "ex2" || kind === "all") {
-    const a = await synthesize(w.example2, `${w.id}_ex2.wav`);
+    const a = await synthesize(w.example2, `${w.id}_ex2.wav`, regenOpts);
     if (a) data.audioEx2 = a;
     else failed.push("ex2");
   }

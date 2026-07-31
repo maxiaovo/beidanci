@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SegmentWord from "@/components/SegmentWord";
 import FitWord from "@/components/FitWord";
@@ -73,8 +73,12 @@ interface TTSSettings {
   apiKey: string;
   model: string;
   voice: string;
+  instruction: string;
   overridden: Record<string, boolean>;
 }
+
+// 英语音色池（与 lib/settings.ts 的 EN_TTS_VOICES 保持一致；客户端组件不便直接 import 服务端模块）
+const EN_TTS_VOICES_CLIENT = ["Jennifer", "Ryan", "Katerina", "Aiden"];
 
 interface AudioWord {
   id: string;
@@ -172,6 +176,12 @@ export default function AdminPage() {
   const [audioFilter, setAudioFilter] = useState("");
   const [regenBusy, setRegenBusy] = useState<Record<string, boolean>>({});
   const [backfillMsg, setBackfillMsg] = useState("");
+  // 重新生成面板：选中 (wordId, kind) 后展开临时指令 + 替代拼写输入
+  const [regenPanel, setRegenPanel] = useState<{ id: string; kind: "word" | "ex1" | "ex2" } | null>(null);
+  const [regenInstruction, setRegenInstruction] = useState("");
+  const [regenAltText, setRegenAltText] = useState("");
+  // 待批准音频区块提示
+  const [approveMsg, setApproveMsg] = useState("");
 
   // 一键补齐全部缺失音频：后台按书断点续传，只生成缺失的条目
   async function backfillAllAudio() {
@@ -188,6 +198,28 @@ export default function AdminPage() {
       setBackfillMsg("网络错误，请重试");
     }
     setTimeout(() => setBackfillMsg(""), 8000);
+  }
+
+  // 批准某本书批量生成音频（先解析、未批准的导入会停在 pending_audio）
+  async function approveAudio(bookId: string) {
+    setApproveMsg("");
+    try {
+      const r = await fetch("/api/admin/audio/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setApproveMsg("✓ 已批准，后台开始生成音频");
+        load();
+      } else {
+        setApproveMsg(d.error || "操作失败");
+      }
+    } catch {
+      setApproveMsg("网络错误，请重试");
+    }
+    setTimeout(() => setApproveMsg(""), 4000);
   }
   const [strict, setStrict] = useState(false);
   const [allowSkip, setAllowSkip] = useState(false); // 允许学习者跳过复习
@@ -322,12 +354,13 @@ export default function AdminPage() {
       const r = await fetch("/api/admin/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ttsBaseUrl: tts.baseUrl,
-          ttsApiKey: tts.apiKey,
-          ttsModel: tts.model,
-          ttsVoice: tts.voice,
-        }),
+      body: JSON.stringify({
+        ttsBaseUrl: tts.baseUrl,
+        ttsApiKey: tts.apiKey,
+        ttsModel: tts.model,
+        ttsVoice: tts.voice,
+        ttsInstruction: tts.instruction,
+      }),
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok) {
@@ -382,15 +415,55 @@ export default function AdminPage() {
     new Audio(`/api/audio/${name}?v=${Date.now()}`).play().catch(() => {});
   }
 
-  // 重新生成某个单词的某条音频，成功后更新列表中的该行
-  async function regenAudio(w: AudioWord, kind: "word" | "ex1" | "ex2") {
+  // 试听指定音色（后台英语音色池中的某一个）
+  async function previewVoiceByName(voice: string) {
+    if (previewKey) return;
+    setPreviewKey(`v-${voice}`);
+    setTtsMsg("");
+    try {
+      const r = await fetch("/api/admin/tts-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseUrl: tts?.baseUrl,
+          apiKey: tts?.apiKey,
+          model: tts?.model,
+          voice,
+          instruction: tts?.instruction,
+          kind: "word",
+        }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setTtsMsg(d.error || "试听合成失败");
+        return;
+      }
+      const url = URL.createObjectURL(await r.blob());
+      previewAudioRef.current?.pause();
+      const a = new Audio(url);
+      previewAudioRef.current = a;
+      await a.play().catch(() => {});
+    } catch {
+      setTtsMsg("试听合成失败");
+    } finally {
+      setPreviewKey(null);
+    }
+  }
+
+  // 重新生成某个单词的某条音频（可带临时指令 / 替代拼写），成功后更新列表中的该行
+  async function regenAudio(
+    w: AudioWord,
+    kind: "word" | "ex1" | "ex2",
+    instruction?: string,
+    altText?: string,
+  ) {
     const key = `${w.id}_${kind}`;
     setRegenBusy((s) => ({ ...s, [key]: true }));
     try {
       const r = await fetch("/api/admin/audio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wordId: w.id, kind }),
+        body: JSON.stringify({ wordId: w.id, kind, instruction, altText }),
       });
       const d = await r.json();
       if (r.ok) {
@@ -1199,7 +1272,7 @@ export default function AdminPage() {
                     <span className="text-xs text-black/40 ml-2">
                       {b.owner.username} 的书 · {b.units} 单元
                       {b.status !== "ready" &&
-                        ` · ${b.status === "processing" ? "导入中" : b.status === "queued" ? "排队中" : b.status === "stopped" ? "已停止" : "出错"}`}
+                        ` · ${b.status === "processing" ? "导入中" : b.status === "queued" ? "排队中" : b.status === "stopped" ? "已停止" : b.status === "pending_audio" ? "待批准音频" : "出错"}`}
                     </span>
                     <span className="block text-xs text-black/50">
                       {b.sharedWithAll
@@ -1362,6 +1435,37 @@ export default function AdminPage() {
           </div>
         </div>
       </section>
+      )}
+
+      {/* 待批准音频（导入后停在 pending_audio 的书，需管理员批准才批量生成） */}
+      {tab === "manage" && books.some((b) => b.status === "pending_audio") && (
+        <section className="bg-white rounded-2xl shadow p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-xl">待批准音频</h2>
+            {approveMsg && <span className="text-sm text-green-600">{approveMsg}</span>}
+          </div>
+          <p className="text-xs text-black/40 mb-3">
+            这些书已解析完成但尚未生成音频。建议先在上方「音频资源」区试生成几个词试听，确认效果后再批量生成。
+          </p>
+          <div className="flex flex-col gap-2">
+            {books
+              .filter((b) => b.status === "pending_audio")
+              .map((b) => (
+                <div key={b.id} className="flex items-center gap-3 border rounded-xl px-3 py-2">
+                  <span className="font-medium">{b.name}</span>
+                  <span className="text-xs text-black/40">
+                    {b.owner.username} 的书 · {b.units} 单元
+                  </span>
+                  <button
+                    onClick={() => approveAudio(b.id)}
+                    className="ml-auto bg-foreground text-white rounded-lg px-3 py-1.5 text-sm font-bold hover:opacity-90"
+                  >
+                    批准生成音频
+                  </button>
+                </div>
+              ))}
+          </div>
+        </section>
       )}
 
       {/* 外观设置 */}
@@ -1642,12 +1746,12 @@ export default function AdminPage() {
           <div className="flex flex-col gap-4 max-w-3xl">
             <div className="flex gap-4 flex-wrap">
               <label className="text-sm text-black/60 flex-1 min-w-56">
-                Base URL（OpenAI 兼容接口，需含 /v1）
+                Base URL（千问 TTS 生成端点）
                 <input
                   value={tts.baseUrl}
                   onChange={(e) => setTts({ ...tts, baseUrl: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="https://api.openai.com/v1"
+                  placeholder="https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
                 />
               </label>
               <label className="text-sm text-black/60 flex-1 min-w-56">
@@ -1669,37 +1773,68 @@ export default function AdminPage() {
                   value={tts.model}
                   onChange={(e) => setTts({ ...tts, model: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="tts-1"
+                  placeholder="qwen3-tts-flash"
                 />
               </label>
               <label className="text-sm text-black/60 flex-1 min-w-56">
-                音色（voice）
+                默认音色（voice，随机池见下方）
                 <input
                   value={tts.voice}
                   onChange={(e) => setTts({ ...tts, voice: e.target.value })}
                   className="mt-1 block border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent font-mono"
-                  placeholder="alloy"
+                  placeholder="Jennifer"
                 />
               </label>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-black/60">试听：</span>
-              <button
-                onClick={() => previewVoice("word")}
-                disabled={!!previewKey}
-                className="text-sm border border-black/15 rounded-lg px-3 py-1.5 hover:bg-black/5 disabled:opacity-50"
-                title="试听单词朗读"
-              >
-                {previewKey === "word" ? "合成中…" : "▶ 单词"}
-              </button>
-              <button
-                onClick={() => previewVoice("sentence")}
-                disabled={!!previewKey}
-                className="text-sm border border-black/15 rounded-lg px-3 py-1.5 hover:bg-black/5 disabled:opacity-50"
-                title="试听例句朗读"
-              >
-                {previewKey === "sentence" ? "合成中…" : "▶ 例句"}
-              </button>
+            <div className="flex flex-col gap-3">
+              <div>
+                <div className="text-sm text-black/60 mb-2">英语音色池（合成时随机选用其一，点击试听）：</div>
+                <div className="flex gap-2 flex-wrap">
+                  {EN_TTS_VOICES_CLIENT.map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => previewVoiceByName(v)}
+                      disabled={!!previewKey}
+                      className="text-sm border border-black/15 rounded-lg px-3 py-1.5 hover:bg-black/5 disabled:opacity-50"
+                      title={`试听音色 ${v}`}
+                    >
+                      {previewKey === `v-${v}` ? "合成中…" : `▶ ${v}`}
+                    </button>
+                  ))}
+                  <span className="text-xs text-black/40 self-center">
+                    默认音色 {tts.voice} 仅作兜底
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-black/60">试听（用默认音色）：</span>
+                <button
+                  onClick={() => previewVoice("word")}
+                  disabled={!!previewKey}
+                  className="text-sm border border-black/15 rounded-lg px-3 py-1.5 hover:bg-black/5 disabled:opacity-50"
+                  title="试听单词朗读"
+                >
+                  {previewKey === "word" ? "合成中…" : "▶ 单词"}
+                </button>
+                <button
+                  onClick={() => previewVoice("sentence")}
+                  disabled={!!previewKey}
+                  className="text-sm border border-black/15 rounded-lg px-3 py-1.5 hover:bg-black/5 disabled:opacity-50"
+                  title="试听例句朗读"
+                >
+                  {previewKey === "sentence" ? "合成中…" : "▶ 例句"}
+                </button>
+              </div>
+              <label className="text-sm text-black/60">
+                合成指令（instruction，仅对 qwen3-tts-instruct-* 生效；qwen3-tts-flash 会忽略）
+                <textarea
+                  value={tts.instruction}
+                  onChange={(e) => setTts({ ...tts, instruction: e.target.value })}
+                  rows={2}
+                  className="mt-1 block border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-accent resize-y text-sm"
+                  placeholder="用英语教学示范朗读的语气，发音清晰、语速适中地朗读"
+                />
+              </label>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -1715,7 +1850,7 @@ export default function AdminPage() {
               )}
             </div>
             <p className="text-xs text-black/40">
-              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。TTS 走 OpenAI 兼容接口（POST /v1/audio/speech），可接 OpenAI、火山引擎、阿里百炼等兼容服务，服务器需能访问该地址才能在线生成。
+              保存后对新发起的音频生成调用立即生效。留空并保存可恢复为环境变量 / 默认值。TTS 走千问（DashScope）原生接口，服务端需能访问该地址才能在线生成；合成英语时会随机从上方音色池选用一个。
             </p>
           </div>
         </section>
@@ -1769,7 +1904,8 @@ export default function AdminPage() {
                 })
                 .slice(0, 300)
                 .map((w) => (
-                  <div key={w.id} className="flex items-center gap-3 py-1.5 text-sm">
+                  <Fragment key={w.id}>
+                  <div className="flex items-center gap-3 py-1.5 text-sm">
                     <div className="w-52 shrink-0">
                       <span className="font-bold">{w.text}</span>
                       <span className="ml-2 text-xs text-black/40">{w.phonetic}</span>
@@ -1799,8 +1935,12 @@ export default function AdminPage() {
                           {file && !ok ? "（缺失）" : !file ? "（无）" : ""}
                         </button>
                         <button
-                          onClick={() => regenAudio(w, kind)}
-                          disabled={regenBusy[`${w.id}_${kind}`]}
+                          onClick={() => {
+                            setRegenPanel({ id: w.id, kind });
+                            setRegenInstruction("");
+                            setRegenAltText("");
+                          }}
+                          disabled={regenBusy[`${w.id}_${kind}`] || (regenPanel?.id === w.id && regenPanel?.kind === kind)}
                           title={`重新生成${label}音频`}
                           className="px-1.5 py-1 rounded text-xs hover:bg-black/10 disabled:opacity-40"
                         >
@@ -1809,6 +1949,53 @@ export default function AdminPage() {
                       </div>
                     ))}
                   </div>
+                  {regenPanel?.id === w.id && (
+                    <div className="mb-2 ml-1 mr-1 rounded-xl bg-black/[.03] p-3 flex flex-col gap-2 text-sm">
+                      <div className="text-xs text-black/50">
+                        重新生成「{w.text}」的
+                        {regenPanel.kind === "word" ? "单词发音" : regenPanel.kind === "ex1" ? "例句1" : "例句2"}
+                        （可选，留空则按当前 TTS 设置）
+                      </div>
+                      <label className="text-xs text-black/60">
+                        替代拼写（仅影响读音，不改单词文本）
+                        <input
+                          value={regenAltText}
+                          onChange={(e) => setRegenAltText(e.target.value)}
+                          placeholder="如 co-operate → cooperate"
+                          className="mt-0.5 block border rounded-lg px-2 py-1 w-full outline-none focus:ring-2 ring-accent text-sm"
+                        />
+                      </label>
+                      <label className="text-xs text-black/60">
+                        临时指令（instruction）
+                        <input
+                          value={regenInstruction}
+                          onChange={(e) => setRegenInstruction(e.target.value)}
+                          placeholder="如：用缓慢语速朗读"
+                          className="mt-0.5 block border rounded-lg px-2 py-1 w-full outline-none focus:ring-2 ring-accent text-sm"
+                        />
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const k = regenPanel.kind;
+                            void regenAudio(w, k, regenInstruction.trim() || undefined, regenAltText.trim() || undefined);
+                            setRegenPanel(null);
+                          }}
+                          disabled={regenBusy[`${w.id}_${regenPanel.kind}`]}
+                          className="bg-foreground text-white rounded-lg px-3 py-1.5 text-sm font-bold hover:opacity-90 disabled:opacity-40"
+                        >
+                          {regenBusy[`${w.id}_${regenPanel.kind}`] ? "生成中…" : "确认重新生成"}
+                        </button>
+                        <button
+                          onClick={() => setRegenPanel(null)}
+                          className="border rounded-lg px-3 py-1.5 text-sm text-black/60 hover:bg-black/5"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  </Fragment>
                 ))}
             </div>
             {audioFilter.trim() === "" && audioWords.length > 300 && (

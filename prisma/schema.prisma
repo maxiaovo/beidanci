@@ -84,7 +84,8 @@ model Book {
   name          String
   ownerId       String
   owner         User     @relation(fields: [ownerId], references: [id])
-  status        String   @default("ready") // queued | processing | ready | error | stopped
+  status        String   @default("ready") // queued | processing | ready | error | stopped | pending_audio
+  audioApproved Boolean  @default(false) // 导入音频生成审批：true 后才批量生成音频
   rawUnits      String   @default("[]") // 导入原始单元文本 JSON，断点续传用
   audioDone     Int      @default(0)
   audioTotal    Int      @default(0)

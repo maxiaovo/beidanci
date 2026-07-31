@@ -66,7 +66,27 @@ export async function resumeImport(bookId: string): Promise<{ ok: boolean; error
   if (!units.length) {
     logImportEvent({ kind: "info", bookId, text: "该书无原始文本记录，仅补齐缺失音频" });
   }
-  await prisma.book.update({ where: { id: bookId }, data: { status: "queued" } });
+  // 断点续传 / 一键补齐属于显式批准，不再二次暂停
+  await prisma.book.update({ where: { id: bookId }, data: { audioApproved: true, status: "queued" } });
+  enqueueImport(bookId, units);
+  return { ok: true };
+}
+
+// 批准某本书生成音频：置 audioApproved=true、status=queued，从 rawUnits 恢复单元直接进音频阶段
+// 分析阶段因单元已入库（非空）会自动跳过，只跑批量音频生成
+export async function approveBookAudio(bookId: string): Promise<{ ok: boolean; error?: string }> {
+  const book = await prisma.book.findUnique({ where: { id: bookId } });
+  if (!book) return { ok: false, error: "单词书不存在" };
+  let units: RawUnit[] = [];
+  try {
+    units = JSON.parse(book.rawUnits || "[]");
+  } catch {
+    units = [];
+  }
+  await prisma.book.update({
+    where: { id: bookId },
+    data: { audioApproved: true, status: "queued" },
+  });
   enqueueImport(bookId, units);
   return { ok: true };
 }
@@ -172,6 +192,17 @@ async function runImport(bookId: string, units: RawUnit[]) {
         });
       }
       await prisma.book.update({ where: { id: bookId }, data: { analyzeDone: ui + 1 } });
+    }
+
+    // 1.5) 音频生成审批：未批准则停在 pending_audio，等管理员在后台批准后再批量生成
+    const approveState = await prisma.book.findUnique({
+      where: { id: bookId },
+      select: { audioApproved: true },
+    });
+    if (!approveState?.audioApproved) {
+      await prisma.book.update({ where: { id: bookId }, data: { status: "pending_audio" } });
+      logImportEvent({ kind: "info", bookId, text: "解析完成，等待管理员批准生成音频" });
+      return;
     }
 
     // 2) 批量生成音频

@@ -62,6 +62,7 @@ export async function PATCH(req: Request) {
     ttsApiKey: "tts_api_key",
     ttsModel: "tts_model",
     ttsVoice: "tts_voice",
+    ttsInstruction: "tts_instruction",
   };
   for (const [bodyKey, settingKey] of Object.entries(strFields)) {
     if (typeof body[bodyKey] === "string") {

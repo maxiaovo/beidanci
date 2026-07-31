@@ -118,21 +118,32 @@ export async function getAIConfig(): Promise<AIConfig> {
 }
 
 // ---- TTS 语音配置（Setting 表 > 环境变量 > 默认值）----
-// 通用 OpenAI 兼容接口（POST {baseUrl}/v1/audio/speech），可接 OpenAI / 火山 / 阿里等兼容服务
-export const DEFAULT_TTS_BASE_URL = "https://api.openai.com/v1";
-export const DEFAULT_TTS_MODEL = "tts-1";
-export const DEFAULT_TTS_VOICE = "alloy";
+// 千问（DashScope）TTS 原生接口：POST {baseUrl}（生成端点）
+// body: { model, input: { text, voice, language_type }, instructions? }
+// 响应 JSON 里 output.audio.url 是 24h 有效的音频地址，需再下载 WAV 二进制
+// 注意：千问 TTS 不是 OpenAI 兼容 /audio/speech，切勿用通用 OpenAI 适配层调用
+export const DEFAULT_TTS_BASE_URL =
+  "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+export const DEFAULT_TTS_MODEL = "qwen3-tts-flash";
+export const DEFAULT_TTS_VOICE = "Jennifer";
+
+// 英语音色池：合成时在后台随机选用其一，并在管理员后台列出供试听
+export const EN_TTS_VOICES = ["Jennifer", "Ryan", "Katerina", "Aiden"] as const;
+
+// 合成指令（仅对 qwen3-tts-instruct-* 系列模型生效；qwen3-tts-flash 接受该字段但不报错，实际被忽略）
+export const DEFAULT_TTS_INSTRUCTION = "用英语教学示范朗读的语气，发音清晰、语速适中地朗读";
 
 export interface TTSConfig {
   baseUrl: string;
   apiKey: string; // TTS_API_TOKEN（未启用鉴权可留空）
   model: string;
   voice: string;
+  instruction: string;
   overridden: Record<string, boolean>;
 }
 
 export async function getTTSConfig(): Promise<TTSConfig> {
-  const keys = ["tts_base_url", "tts_api_key", "tts_model", "tts_voice"];
+  const keys = ["tts_base_url", "tts_api_key", "tts_model", "tts_voice", "tts_instruction"];
   const rows = await prisma.setting.findMany({ where: { key: { in: keys } } });
   const s = Object.fromEntries(rows.map((r) => [r.key, r.value as string]));
   return {
@@ -140,11 +151,13 @@ export async function getTTSConfig(): Promise<TTSConfig> {
     apiKey: s.tts_api_key || process.env.TTS_API_TOKEN || "",
     model: s.tts_model || process.env.TTS_MODEL || DEFAULT_TTS_MODEL,
     voice: s.tts_voice || process.env.TTS_VOICE || DEFAULT_TTS_VOICE,
+    instruction: s.tts_instruction || process.env.TTS_INSTRUCTION || DEFAULT_TTS_INSTRUCTION,
     overridden: {
       baseUrl: !!s.tts_base_url,
       apiKey: !!s.tts_api_key,
       model: !!s.tts_model,
       voice: !!s.tts_voice,
+      instruction: !!s.tts_instruction,
     },
   };
 }
