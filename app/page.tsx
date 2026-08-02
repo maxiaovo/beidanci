@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
-import BookWheel from "@/components/BookWheel";
+import BookShelf from "@/components/BookShelf";
 
 interface BookInfo {
   id: string;
   name: string;
   status: string;
+  total: number;
+  learned: number;
+  mastered: number;
 }
 
 interface SessionPlan {
@@ -82,7 +85,7 @@ export default function Dashboard() {
   const [showPlanSettings, setShowPlanSettings] = useState(false);
   const [savingPlans, setSavingPlans] = useState(false);
   const [plansSaved, setPlansSaved] = useState(false);
-  const [selectedBook, setSelectedBook] = useState<string>(AUTO); // 轮盘选中的书
+  const [selectedBook, setSelectedBook] = useState<string>(AUTO);
   const router = useRouter();
 
   useEffect(() => {
@@ -149,13 +152,7 @@ export default function Dashboard() {
   const plans = session?.plans ?? [];
   const readyBooks = books.filter((b) => b.status === "ready");
 
-  // 轮盘选项：系统自动安排 + 所有可用单词书
-  const wheelItems = [
-    { id: AUTO, label: "🔄 系统自动安排" },
-    ...readyBooks.map((b) => ({ id: b.id, label: b.name })),
-  ];
-
-  // 选中项的说明文字
+  // 系统安排与所有单词书同时展示，点击卡片即可切换。
   let selectedDesc: string;
   if (selectedBook === AUTO) {
     selectedDesc =
@@ -172,66 +169,94 @@ export default function Dashboard() {
   }
 
   const learnHref = selectedBook === AUTO ? "/learn" : `/learn?book=${selectedBook}`;
+  const selectedName = selectedBook === AUTO ? "智能安排" : readyBooks.find((b) => b.id === selectedBook)?.name;
+  const totalWords = readyBooks.reduce((sum, book) => sum + book.total, 0);
+  const learnedWords = readyBooks.reduce((sum, book) => sum + book.learned, 0);
+  const shelfItems = [
+    {
+      id: AUTO,
+      name: "智能安排",
+      total: totalWords,
+      learned: learnedWords,
+      mastered: readyBooks.reduce((sum, book) => sum + book.mastered, 0),
+      eyebrow: "推荐",
+      description: selectedDesc,
+    },
+    ...readyBooks.map((book) => ({
+      id: book.id,
+      name: book.name,
+      total: book.total,
+      learned: book.learned,
+      mastered: book.mastered,
+      description: plans.find((plan) => plan.bookId === book.id)
+        ? planDesc(plans.find((plan) => plan.bookId === book.id)!)
+        : `已学习 ${book.learned}，已掌握 ${book.mastered}`,
+    })),
+  ];
 
   return (
-    <div className="max-w-4xl mx-auto p-6 flex flex-col gap-8">
+    <div className="page-shell flex flex-col gap-8">
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
-      {/* 今日任务 */}
-      <section className="bg-white rounded-2xl shadow p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-lg">今日任务</h2>
+      <section className="relative overflow-hidden rounded-[2rem] bg-foreground px-6 py-8 text-white shadow-[0_24px_60px_rgba(58,46,92,0.2)] sm:px-8 lg:px-10 lg:py-10">
+        <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-accent/35 blur-3xl" />
+        <div className="relative grid items-end gap-8 lg:grid-cols-[1fr_auto]">
+          <div>
+            <div className="mb-3 text-sm font-bold tracking-[0.18em] text-white/55 uppercase">Up next · 今日下一步</div>
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+              {due > 0 ? `先完成 ${due} 个到期复习` : "开始今天的新词学习"}
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-white/68 lg:text-lg">
+              {due > 0
+                ? "到期词先用主动回忆巩固；完成后，系统会自动带你进入新词学习。"
+                : `已选择「${selectedName ?? "智能安排"}」；今天会按计划安排 ${session?.stats.dailyNewTarget ?? 0} 个新词。`}
+            </p>
+            <div className="mt-6 flex flex-wrap gap-6 text-sm text-white/65">
+              <span><strong className="text-xl text-white">{session?.stats.reviewsDoneToday ?? 0}</strong> 今日复习</span>
+              <span><strong className="text-xl text-white">{session?.stats.learnedToday ?? 0}</strong> 今日新词</span>
+              <span><strong className="text-xl text-white">{learnedWords}</strong> 累计学习</span>
+            </div>
+          </div>
+          <Link
+            href={due > 0 ? "/check?mode=review" : learnHref}
+            className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-white px-8 py-4 text-lg font-black text-foreground shadow-lg transition hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/35"
+          >
+            {due > 0 ? "开始今日复习" : "开始背单词"}
+            <span className="ml-3" aria-hidden="true">→</span>
+          </Link>
+        </div>
+      </section>
+
+      <section className="rounded-[2rem] border border-black/6 bg-white/72 p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
+        <div className="mb-6 flex items-start justify-between gap-6">
+          <div>
+            <h2 className="text-2xl font-black">选择单词书</h2>
+            <p className="mt-2 text-sm leading-6 text-black/48">
+              所有可用单词书都在这里。点击选中；鼠标经过可以快速查看每本书的学习进度。
+            </p>
+          </div>
           <button
             onClick={() => setShowPlanSettings(true)}
             title="每日任务设置"
-            className="text-xl text-black/40 hover:text-black/70 hover:rotate-45 transition-transform"
+            className="shrink-0 rounded-xl border border-black/10 px-4 py-2 text-sm font-bold text-black/55 transition hover:border-accent/40 hover:bg-accent/8 hover:text-foreground"
           >
-            ⚙️
+            调整每日计划
           </button>
         </div>
-
-        {due > 0 && (
-          <div className="flex items-center gap-4 flex-wrap mb-4">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-orange-500">{due}</div>
-              <div className="text-sm text-black/50 mt-1">待复习</div>
-            </div>
-            <Link
-              href="/check?mode=review"
-              className="bg-orange-500 text-white rounded-xl px-5 py-2.5 font-bold hover:opacity-90"
-            >
-              先复习 {due} 词 →
-            </Link>
-            <p className="text-sm text-orange-500/80 w-full">
-              按记忆曲线，先通过全部复习检查才能解锁新词哦
-            </p>
-          </div>
-        )}
-
         {readyBooks.length === 0 ? (
-          <div className="text-center text-black/40 py-6">
+          <div className="py-10 text-center text-black/40">
             还没有可用的单词书，<Link href="/import" className="text-blue-500 underline">去导入一本</Link>吧
           </div>
         ) : (
-          <>
-            <BookWheel items={wheelItems} value={selectedBook} onChange={setSelectedBook} />
-            <div className="text-center text-sm text-black/50 mt-2 min-h-5">{selectedDesc}</div>
-            <div className="flex justify-center gap-3 mt-4">
-              <Link
-                href={learnHref}
-                className="bg-blue-500 text-white rounded-xl px-8 py-3 font-bold hover:opacity-90"
-              >
-                开始背单词 →
-              </Link>
-              <Link
-                href="/check"
-                className="border border-black/15 rounded-xl px-6 py-3 font-medium hover:bg-black/5"
-              >
-                自由检查
-              </Link>
-            </div>
-          </>
+          <BookShelf items={shelfItems} value={selectedBook} onChange={setSelectedBook} />
         )}
       </section>
+
+      <div className="flex items-center justify-between gap-4 border-t border-black/8 px-1 pt-5 text-sm text-black/45">
+        <span>想额外加练？自由练习不会改变今日主任务。</span>
+        <Link href="/check" className="shrink-0 font-bold text-foreground underline decoration-black/20 underline-offset-4 hover:text-accent">
+          进入自由练习
+        </Link>
+      </div>
 
       {/* 每日任务设置（齿轮弹窗） */}
       {showPlanSettings && (

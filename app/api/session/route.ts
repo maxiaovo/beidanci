@@ -63,9 +63,12 @@ export async function GET(req: Request) {
   });
 
   // 今日已完成的复习数（用于显示进度）
-  const reviewsDoneToday = await prisma.studyLog.count({
-    where: { userId: user.id, mode: { startsWith: "check" }, result: { in: ["correct", "giveup"] }, createdAt: { gte: start } },
+  const reviewedWordsToday = await prisma.studyLog.findMany({
+    where: { userId: user.id, mode: { startsWith: "check" }, result: "correct", createdAt: { gte: start } },
+    distinct: ["wordId"],
+    select: { wordId: true },
   });
+  const reviewsDoneToday = reviewedWordsToday.length;
   const learnedToday = await prisma.studyLog.count({
     where: { userId: user.id, mode: "learn", createdAt: { gte: start } },
   });

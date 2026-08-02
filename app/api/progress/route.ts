@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser, isParent } from "@/lib/session";
-import { advanceStage, nextReviewDate } from "@/lib/scheduler";
 import { isStrictCheck } from "@/lib/settings";
+import { decideProgress, type ProgressMode, type ProgressResult } from "@/lib/progress-decision";
 
 // 记录一次学习/检查结果，推进记忆曲线
 // 强检查开启时：拼写检查和选择检查都答对才算通过（stage 才推进）
@@ -11,8 +11,10 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
   if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
-  const { wordId, mode, result } = await req.json().catch(() => ({}));
-  if (!wordId || !mode || !["correct", "wrong", "giveup"].includes(result)) {
+  const { wordId, mode, result, hadFailure = false } = await req.json().catch(() => ({}));
+  const validModes: ProgressMode[] = ["learn", "check-spell", "check-choice"];
+  const validResults: ProgressResult[] = ["correct", "wrong", "giveup"];
+  if (!wordId || !validModes.includes(mode) || !validResults.includes(result) || typeof hadFailure !== "boolean") {
     return NextResponse.json({ error: "参数错误" }, { status: 400 });
   }
 
@@ -25,61 +27,27 @@ export async function POST(req: Request) {
 
   const correct = result === "correct";
   const strict = (await isStrictCheck()) && mode.startsWith("check");
-
-  let spellPassed = existing?.spellPassed ?? false;
-  let choicePassed = existing?.choicePassed ?? false;
-  let newStage: number;
-  let nextAt: Date;
-
-  if (strict) {
-    if (correct) {
-      if (mode === "check-spell") spellPassed = true;
-      if (mode === "check-choice") choicePassed = true;
-      const bothPassed = spellPassed && choicePassed;
-      if (bothPassed) {
-        // 两种检查都过了：推进记忆曲线，并清空本轮标记
-        newStage = advanceStage(existing?.stage ?? 0, true);
-        nextAt = nextReviewDate(newStage);
-        spellPassed = false;
-        choicePassed = false;
-      } else {
-        // 只过了一种：stage 不变，复习时间不变（词仍留在到期队列里）
-        newStage = existing?.stage ?? 0;
-        nextAt = existing?.nextReviewAt ?? nextReviewDate(0);
-      }
-    } else {
-      // 答错/放弃：本轮两种检查标记清零，降回 stage 0
-      spellPassed = false;
-      choicePassed = false;
-      newStage = advanceStage(existing?.stage ?? 0, false);
-      nextAt = nextReviewDate(newStage);
-    }
-  } else {
-    newStage = advanceStage(existing?.stage ?? 0, correct);
-    nextAt = nextReviewDate(newStage);
-    spellPassed = false;
-    choicePassed = false;
-  }
+  const decision = decideProgress({ existing, mode, result, strict, hadFailure });
 
   await prisma.wordProgress.upsert({
     where: { userId_wordId: { userId: user.id, wordId } },
     create: {
       userId: user.id,
       wordId,
-      stage: newStage,
-      nextReviewAt: nextAt,
+      stage: decision.stage,
+      nextReviewAt: decision.nextReviewAt,
       lastResult: result,
-      spellPassed,
-      choicePassed,
+      spellPassed: decision.spellPassed,
+      choicePassed: decision.choicePassed,
       reps: correct ? 1 : 0,
       lapses: correct ? 0 : 1,
     },
     update: {
-      stage: newStage,
-      nextReviewAt: nextAt,
+      stage: decision.stage,
+      nextReviewAt: decision.nextReviewAt,
       lastResult: result,
-      spellPassed,
-      choicePassed,
+      spellPassed: decision.spellPassed,
+      choicePassed: decision.choicePassed,
       reps: { increment: correct ? 1 : 0 },
       lapses: { increment: correct ? 0 : 1 },
     },
@@ -87,5 +55,5 @@ export async function POST(req: Request) {
 
   await prisma.studyLog.create({ data: { userId: user.id, wordId, mode, result } });
 
-  return NextResponse.json({ ok: true, stage: newStage, nextReviewAt: nextAt });
+  return NextResponse.json({ ok: true, stage: decision.stage, nextReviewAt: decision.nextReviewAt });
 }

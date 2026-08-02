@@ -155,7 +155,7 @@ export default function ParentPage() {
   if (!children) return <div className="p-10 text-center text-black/40">加载中…</div>;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 flex flex-col gap-6">
+    <div className="max-w-[1440px] mx-auto p-6 lg:px-10 flex flex-col gap-6">
       <div className="flex gap-6 flex-wrap">
         {/* 孩子列表 */}
         <section className="flex-1 min-w-72">

@@ -65,7 +65,7 @@ export default function BookDetail({ params }: { params: Promise<{ bookId: strin
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6 flex flex-col md:flex-row gap-4 md:gap-6">
+    <div className="max-w-[1440px] mx-auto p-4 sm:p-6 lg:px-10 flex flex-col md:flex-row gap-4 md:gap-6">
       {/* 单元侧栏（手机端为顶部横向滚动条） */}
       <aside className="md:w-56 shrink-0">
         <h1 className="font-bold text-lg mb-3 leading-snug">{book.name}</h1>

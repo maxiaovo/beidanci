@@ -142,10 +142,15 @@ export function playGua() {
   osc.stop(ac.currentTime + 0.2);
 }
 
-export async function postProgress(wordId: string, mode: string, result: "correct" | "wrong" | "giveup") {
+export async function postProgress(
+  wordId: string,
+  mode: string,
+  result: "correct" | "wrong" | "giveup",
+  options: { hadFailure?: boolean } = {},
+) {
   await fetch("/api/progress", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ wordId, mode, result }),
+    body: JSON.stringify({ wordId, mode, result, hadFailure: options.hadFailure ?? false }),
   });
 }

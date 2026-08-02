@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { playAudio, playDing, playBuzz, postProgress, preloadAudio } from "@/lib/client";
 import FitWord from "@/components/FitWord";
 import { DEFAULT_APPEARANCE, type LearnAppearance } from "@/lib/appearance";
+import { buildReviewTasks, type ReviewTask } from "@/lib/review-tasks";
 
 interface QuizWord {
   id: string;
@@ -21,23 +22,61 @@ interface QuizWord {
 
 type QuizMode = "spell" | "choice";
 
-// 一道检查题：某个词的一种检查方式。强检查时每个词拆成拼写、选择两道题，
-// 两轮分别随机排序，保证同一个词的两次检查不会挨在一起。
-interface Task {
-  word: QuizWord;
-  mode: QuizMode;
-}
+// 一道检查题：强检查时每个词拆成拼写、选择两题，再在整场队列中交错打散。
+type Task = ReviewTask<QuizWord>;
 
-const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
+export function RecallActions({
+  revealed,
+  mode = "spell",
+  word,
+  meaningCn,
+  phonetic,
+  canReveal = true,
+  onReveal,
+  onNext,
+}: {
+  revealed: boolean;
+  mode?: QuizMode;
+  word: string;
+  meaningCn?: string;
+  phonetic: string;
+  canReveal?: boolean;
+  onReveal: () => void;
+  onNext: () => void;
+}) {
+  if (revealed) {
+    const answer = mode === "choice" ? meaningCn : word;
+    const detail = mode === "choice" ? `${word} ${phonetic}`.trim() : phonetic;
 
-function buildTasks(ws: QuizWord[], strict: boolean, mode: QuizMode): Task[] {
-  if (strict) {
-    return [
-      ...shuffle(ws).map((word) => ({ word, mode: "spell" as const })),
-      ...shuffle(ws).map((word) => ({ word, mode: "choice" as const })),
-    ];
+    return (
+      <div className="text-center flex flex-col items-center gap-3">
+        <div className="font-bold text-blue-600 max-w-full">
+          <FitWord text={answer ?? word} sizePx={36} />
+        </div>
+        {detail && <div className="text-black/40">{detail}</div>}
+        <button
+          type="button"
+          onClick={onNext}
+          className="mt-2 bg-foreground text-white rounded-xl px-8 py-2.5 font-bold"
+          autoFocus
+        >
+          下一个 →
+        </button>
+      </div>
+    );
   }
-  return shuffle(ws).map((word) => ({ word, mode }));
+
+  if (!canReveal) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={onReveal}
+      className="text-sm text-black/45 underline underline-offset-4 hover:text-orange-600"
+    >
+      想不起来，查看答案
+    </button>
+  );
 }
 
 export default function CheckPage() {
@@ -67,6 +106,7 @@ function CheckInner() {
   const [appearance, setAppearance] = useState<LearnAppearance>(DEFAULT_APPEARANCE); // 全局外观（卡片宽度等）
   const [round, setRound] = useState(1); // 复习循环轮次：未通过的词进入下一轮
   const failedRef = useRef<Set<string>>(new Set()); // 本轮未通过（答错/放弃过）的词
+  const lapsedRef = useRef<Set<string>>(new Set()); // 整场复习中曾失败的词，纠正后也不升级
 
   // 拼写题状态
   const [input, setInput] = useState("");
@@ -76,8 +116,8 @@ function CheckInner() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 选择题状态
-  const [options, setOptions] = useState<string[]>([]);
   const [wrongPicks, setWrongPicks] = useState<string[]>([]);
+  const [choiceAnswered, setChoiceAnswered] = useState(false);
 
   const task = tasks[idx];
   const word = task?.word;
@@ -87,7 +127,7 @@ function CheckInner() {
   const startRound = useCallback(
     (ws: QuizWord[], isStrict: boolean, m: QuizMode) => {
       setWords(ws);
-      setTasks(buildTasks(ws, isStrict, m));
+      setTasks(buildReviewTasks(ws, isStrict, m));
       setIdx(0);
       failedRef.current = new Set();
       // 重置题目状态，避免上一轮的残留带到新一轮
@@ -95,6 +135,7 @@ function CheckInner() {
       setSpellState("idle");
       setShowAnswer(false);
       setWrongPicks([]);
+      setChoiceAnswered(false);
       preloadAudio(ws.map((w) => w.audioWord));
     },
     [],
@@ -146,22 +187,27 @@ function CheckInner() {
   }, [isReview, router, startRound]);
 
   useEffect(() => {
-    load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
-  // 生成选择题选项（依赖整个 task：新一轮重建 tasks，引用变化会触发重新生成）
-  useEffect(() => {
-    if (!task || task.mode !== "choice") return;
+  // 选项完全由当前题目和干扰项推导，不额外维护一份可能失步的状态。
+  const options = useMemo(() => {
+    if (!task || task.mode !== "choice") return [];
     const w = task.word;
-    const pool = distractors.filter((m) => m && m !== w.meaningCn);
-    const picks = new Set<string>();
-    while (picks.size < 3 && picks.size < pool.length) {
-      picks.add(pool[Math.floor(Math.random() * pool.length)]);
-    }
-    const all = [...picks, w.meaningCn].sort(() => Math.random() - 0.5);
-    setOptions(all);
-    setWrongPicks([]);
-  }, [task, distractors]);
+    const seed = `${w.id}:${round}:${idx}`;
+    const rank = (value: string) => {
+      let hash = 2166136261;
+      for (const char of `${seed}:${value}`) {
+        hash ^= char.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+      }
+      return hash >>> 0;
+    };
+    const pool = [...new Set(distractors.filter((m) => m && m !== w.meaningCn))];
+    const picks = pool.sort((a, b) => rank(a) - rank(b)).slice(0, 3);
+    return [...picks, w.meaningCn].sort((a, b) => rank(`answer:${a}`) - rank(`answer:${b}`));
+  }, [task, distractors, round, idx]);
 
   useEffect(() => {
     if (mode === "spell") inputRef.current?.focus();
@@ -169,6 +215,7 @@ function CheckInner() {
 
   const markFailed = useCallback((wordId: string) => {
     failedRef.current.add(wordId);
+    lapsedRef.current.add(wordId);
   }, []);
 
   const next = useCallback(async () => {
@@ -177,6 +224,8 @@ function CheckInner() {
       setInput("");
       setSpellState("idle");
       setShowAnswer(false);
+      setWrongPicks([]);
+      setChoiceAnswered(false);
       return;
     }
     // 本轮结束
@@ -219,7 +268,7 @@ function CheckInner() {
     if (answer === word.text.toLowerCase()) {
       playDing();
       setSpellState("correct");
-      await postProgress(word.id, "check-spell", "correct");
+      await postProgress(word.id, "check-spell", "correct", { hadFailure: lapsedRef.current.has(word.id) });
       setTimeout(next, 700);
     } else {
       playBuzz();
@@ -230,20 +279,22 @@ function CheckInner() {
     }
   }
 
-  // 放弃
+  // 想不起来：两种题型都可直接揭晓答案，并按未通过记录。
   async function giveUp() {
-    if (!word) return;
+    if (!word || showAnswer || spellState === "correct" || choiceAnswered) return;
     setShowAnswer(true);
+    setChoiceAnswered(mode === "choice");
     markFailed(word.id);
-    await postProgress(word.id, "check-spell", "giveup");
+    await postProgress(word.id, mode === "spell" ? "check-spell" : "check-choice", "giveup");
   }
 
   // 选择题点击
   async function pick(opt: string) {
-    if (!word) return;
+    if (!word || showAnswer || choiceAnswered) return;
     if (opt === word.meaningCn) {
+      setChoiceAnswered(true);
       playDing();
-      await postProgress(word.id, "check-choice", "correct");
+      await postProgress(word.id, "check-choice", "correct", { hadFailure: lapsedRef.current.has(word.id) });
       setTimeout(next, 500);
     } else {
       playBuzz();
@@ -289,29 +340,36 @@ function CheckInner() {
   // 自由练习的模式选择
   if (!isReview && quizMode === null) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center">
-        <div className="flex flex-col sm:flex-row gap-6 px-4">
+      <div className="page-shell min-h-[70vh] flex flex-col justify-center">
+        <div className="mb-8 max-w-2xl">
+          <div className="text-sm font-bold uppercase tracking-[0.16em] text-black/35">额外练习</div>
+          <h1 className="mt-2 text-3xl font-black">选择一种训练方式</h1>
+          <p className="mt-3 leading-7 text-black/50">这里用于自主加练，不影响首页推荐的今日学习顺序。</p>
+        </div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <button
             onClick={() => {
               setQuizMode("spell");
               startRound(words, false, "spell");
             }}
-            className="bg-white rounded-2xl shadow-lg p-10 w-64 max-w-full hover:shadow-xl transition-shadow text-center"
+            className="min-h-64 rounded-3xl border border-black/6 bg-white p-10 text-left shadow-lg transition hover:-translate-y-1 hover:border-accent/40 hover:shadow-xl"
           >
-            <div className="text-4xl mb-3">⌨️</div>
-            <div className="font-bold text-lg">拼写检查</div>
-            <div className="text-sm text-black/50 mt-2">看中文意思，拼出单词</div>
+            <div className="text-xs font-bold uppercase tracking-[0.16em] text-black/35">主动回忆 · 难度较高</div>
+            <div className="mt-8 text-2xl font-black">拼写检查</div>
+            <div className="mt-3 text-base leading-7 text-black/50">只看中文意思，从记忆中完整拼出英文单词。</div>
+            <div className="mt-8 font-bold text-foreground">开始拼写 →</div>
           </button>
           <button
             onClick={() => {
               setQuizMode("choice");
               startRound(words, false, "choice");
             }}
-            className="bg-white rounded-2xl shadow-lg p-10 w-64 max-w-full hover:shadow-xl transition-shadow text-center"
+            className="min-h-64 rounded-3xl border border-black/6 bg-white p-10 text-left shadow-lg transition hover:-translate-y-1 hover:border-accent/40 hover:shadow-xl"
           >
-            <div className="text-4xl mb-3">🎯</div>
-            <div className="font-bold text-lg">选择检查</div>
-            <div className="text-sm text-black/50 mt-2">看单词，选出正确中文意思</div>
+            <div className="text-xs font-bold uppercase tracking-[0.16em] text-black/35">快速辨认 · 难度较低</div>
+            <div className="mt-8 text-2xl font-black">选择检查</div>
+            <div className="mt-3 text-base leading-7 text-black/50">看到英文单词，从四个选项中辨认正确释义。</div>
+            <div className="mt-8 font-bold text-foreground">开始选择 →</div>
           </button>
         </div>
       </div>
@@ -343,7 +401,7 @@ function CheckInner() {
   return (
     <div
       className="mx-auto p-4 sm:p-6 flex flex-col items-center gap-6"
-      style={{ width: `${appearance.cardWidthPct}%`, maxWidth: "100%" }}
+      style={{ width: `${appearance.cardWidthPct}%`, maxWidth: "1440px" }}
     >
       <div className="w-full flex items-center justify-between text-sm text-black/50">
         <span>
@@ -365,21 +423,7 @@ function CheckInner() {
               <div className="text-black/40 text-sm mb-2">{word.pos}</div>
               <div className="text-3xl sm:text-4xl font-bold">{word.meaningCn}</div>
             </div>
-            {showAnswer ? (
-              <div className="text-center flex flex-col items-center gap-3">
-                <div className="font-bold text-blue-600 max-w-full">
-                  <FitWord text={word.text} sizePx={36} />
-                </div>
-                <div className="text-black/40">{word.phonetic}</div>
-                <button
-                  onClick={next}
-                  className="mt-2 bg-foreground text-white rounded-xl px-8 py-2.5 font-bold"
-                  autoFocus
-                >
-                  下一个 →
-                </button>
-              </div>
-            ) : (
+            {!showAnswer && (
               <div className="flex flex-col items-center gap-4 w-full max-w-sm">
                 <input
                   ref={inputRef}
@@ -401,11 +445,6 @@ function CheckInner() {
                         : "border-black/15 focus:border-accent"
                   }`}
                 />
-                {spellState === "wrong" && (
-                  <button onClick={giveUp} className="text-sm text-black/40 underline hover:text-black/70">
-                    放弃，显示答案
-                  </button>
-                )}
               </div>
             )}
           </>
@@ -420,27 +459,40 @@ function CheckInner() {
               </button>
             </div>
             <div className="text-black/40">{word.phonetic}</div>
-            <div className="grid grid-cols-1 gap-3 w-full max-w-md">
-              {options.map((opt) => {
-                const isWrong = wrongPicks.includes(opt);
-                return (
-                  <button
-                    key={opt}
-                    disabled={isWrong}
-                    onClick={() => pick(opt)}
-                    className={`rounded-xl border px-4 py-3 text-lg transition-colors ${
-                      isWrong
-                        ? "border-red-300 text-red-400 bg-red-50 line-through"
-                        : "border-black/10 hover:border-accent hover:bg-accent/20"
-                    }`}
-                  >
-                    {opt}
-                  </button>
-                );
-              })}
-            </div>
+            {!showAnswer && (
+              <div className="grid grid-cols-1 gap-3 w-full max-w-md">
+                {options.map((opt) => {
+                  const isWrong = wrongPicks.includes(opt);
+                  return (
+                    <button
+                      key={opt}
+                      disabled={isWrong || choiceAnswered}
+                      onClick={() => pick(opt)}
+                      className={`rounded-xl border px-4 py-3 text-lg transition-colors ${
+                        isWrong
+                          ? "border-red-300 text-red-400 bg-red-50 line-through"
+                          : "border-black/10 hover:border-accent hover:bg-accent/20"
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
+
+        <RecallActions
+          revealed={showAnswer}
+          mode={mode}
+          word={word.text}
+          meaningCn={word.meaningCn}
+          phonetic={word.phonetic}
+          canReveal={spellState !== "correct" && !choiceAnswered}
+          onReveal={giveUp}
+          onNext={next}
+        />
       </div>
 
       {isReview && allowSkip && (

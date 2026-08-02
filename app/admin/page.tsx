@@ -172,6 +172,7 @@ export default function AdminPage() {
   // 试听状态
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioPlayVersionRef = useRef(0);
   const [audioWords, setAudioWords] = useState<AudioWord[] | null>(null);
   const [audioFilter, setAudioFilter] = useState("");
   const [regenBusy, setRegenBusy] = useState<Record<string, boolean>>({});
@@ -231,6 +232,7 @@ export default function AdminPage() {
   const [msgTriggerValue, setMsgTriggerValue] = useState(5);
   const [msgValidDays, setMsgValidDays] = useState(7);
   const [msgMsg, setMsgMsg] = useState("");
+  const [messageNow, setMessageNow] = useState(Date.now);
   const [siteTitle, setSiteTitle] = useState("");
   const [hasIcon, setHasIcon] = useState(false);
   const [iconVer, setIconVer] = useState(0);
@@ -343,9 +345,17 @@ export default function AdminPage() {
 
   // TTS 设置加载后自动探测一次服务连接
   useEffect(() => {
-    if (tts) checkTtsHealth(tts);
+    if (!tts) return;
+    const timer = window.setTimeout(() => void checkTtsHealth(tts), 0);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tts === null]);
+
+  // 留言过期状态每分钟刷新一次，避免在渲染期间直接读取当前时间。
+  useEffect(() => {
+    const timer = window.setInterval(() => setMessageNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function saveTTS() {
     if (!tts) return;
@@ -412,7 +422,8 @@ export default function AdminPage() {
 
   // 播放音频（加时间戳避免重新生成后命中浏览器缓存）
   function playAudio(name: string) {
-    new Audio(`/api/audio/${name}?v=${Date.now()}`).play().catch(() => {});
+    audioPlayVersionRef.current += 1;
+    new Audio(`/api/audio/${name}?v=${audioPlayVersionRef.current}`).play().catch(() => {});
   }
 
   // 试听指定音色（后台英语音色池中的某一个）
@@ -779,7 +790,7 @@ export default function AdminPage() {
   if (!users) return <div className="p-10 text-center text-black/40">加载中…</div>;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 flex flex-col gap-6">
+    <div className="max-w-[1440px] mx-auto p-6 lg:px-10 flex flex-col gap-6">
       {/* 页签：管理 / 设置 */}
       <div className="flex gap-1 bg-black/5 rounded-full px-1 py-1 w-fit text-sm">
         {([
@@ -1205,7 +1216,7 @@ export default function AdminPage() {
             ) : (
               <div className="flex flex-col gap-2 text-sm">
                 {msgList.map((m) => {
-                  const expired = +new Date(m.validUntil) < Date.now();
+                  const expired = +new Date(m.validUntil) < messageNow;
                   return (
                     <div key={m.id} className={`border rounded-xl p-3 ${expired ? "opacity-50" : ""}`}>
                       <div className="whitespace-pre-wrap break-words">{m.text}</div>

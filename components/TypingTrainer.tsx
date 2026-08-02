@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { playGua } from "@/lib/client";
+import { playDing, playGua } from "@/lib/client";
 import { clampPx } from "@/lib/appearance";
 
 // 容易输入的 ASCII 标点/空格；字母、数字以及这些之外的字符视为"难打符号"
@@ -45,12 +45,6 @@ export default function TypingTrainer({
   const hardChars = [...new Set(target.split("").filter(isHardChar))];
 
   useEffect(() => {
-    doneRef.current = false;
-    setTyped("");
-    setWrongSpaces(new Set());
-  }, [target]);
-
-  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Backspace") {
@@ -67,6 +61,7 @@ export default function TypingTrainer({
       if (e.key === "Enter") {
         if (allCorrect && !doneRef.current) {
           doneRef.current = true;
+          playDing();
           onComplete();
         }
         e.preventDefault();

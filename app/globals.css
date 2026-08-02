@@ -21,6 +21,44 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* 桌面端内容外框：页面共享同一条宽屏基线。 */
+.page-shell {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+  padding: 2rem clamp(1.25rem, 3vw, 3rem) 3rem;
+}
+
+/* 单词书卡片：鼠标经过时轻轻跃起，并有一道柔和高光扫过。 */
+.book-shelf-card:hover {
+  transform: translateY(-7px) scale(1.012);
+  box-shadow: 0 24px 52px rgba(83, 70, 156, 0.18);
+}
+.book-shelf-shine {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(94, 233, 212, 0.45), transparent 22%),
+    linear-gradient(112deg, transparent 18%, rgba(255, 255, 255, 0.9) 44%, transparent 68%);
+  transform: translateX(-55%);
+}
+.book-shelf-card:hover .book-shelf-shine,
+.book-shelf-card[aria-pressed="true"] .book-shelf-shine {
+  opacity: 1;
+  animation: book-shine 1.15s ease-out both;
+}
+@keyframes book-shine {
+  from { transform: translateX(-55%); }
+  to { transform: translateX(55%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .book-shelf-card,
+  .book-shelf-shine,
+  .book-shelf-card:hover {
+    animation: none !important;
+    transform: none;
+    transition: none;
+  }
+}
+
 /* 临摹输入错误抖动 */
 @keyframes shake {
   0%, 100% { transform: translateX(0); }

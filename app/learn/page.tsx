@@ -15,13 +15,13 @@ import { DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appeara
 type Phase = "show" | "segments" | "ex1" | "ex2" | "trace" | "traceEx1" | "traceEx2";
 
 const PHASE_HINT: Record<Phase, string> = {
-  show: "→ / 回车：词根词缀拆解 · ←：返回上一步",
-  segments: "→ / 回车：例句 1 · ←：返回上一步",
-  ex1: "→ / 回车：例句 2 · ←：返回上一步",
-  ex2: "→ / 回车：开始临摹 · ←：返回上一步",
-  trace: "临摹单词，完成后回车继续 · Shift+← 返回上一步",
-  traceEx1: "抄写例句 1，完成后回车继续 · Shift+← 返回上一步",
-  traceEx2: "抄写例句 2，完成后回车结束 · Shift+← 返回上一步",
+  show: "点击单词听发音，确认读音后进入拆解",
+  segments: "理解构词、释义和记忆提示",
+  ex1: "听第一条例句，观察单词在语境中的用法",
+  ex2: "用第二条语境再次辨认含义",
+  trace: "跟随浅色字形完成拼写",
+  traceEx1: "扩展练习：完整抄写第一条例句",
+  traceEx2: "扩展练习：完整抄写第二条例句",
 };
 
 const NEXT_PHASE: Partial<Record<Phase, Phase>> = {
@@ -38,6 +38,17 @@ const PREV_PHASE: Partial<Record<Phase, Phase>> = {
   trace: "ex2",
   traceEx1: "trace",
   traceEx2: "traceEx1",
+};
+
+const LEARN_STEPS = ["认识", "拆解", "语境", "拼写"] as const;
+const PHASE_STEP: Record<Phase, number> = {
+  show: 0,
+  segments: 1,
+  ex1: 2,
+  ex2: 2,
+  trace: 3,
+  traceEx1: 3,
+  traceEx2: 3,
 };
 
 // 学习页外观（全局设置，由管理员在后台统一配置，/api/session 下发）见 lib/appearance.ts
@@ -294,11 +305,13 @@ function LearnInner() {
 
   const sentenceStyle = { fontSize: clampPx(appearance.sentenceSizePx) };
   const sentenceCnStyle = { fontSize: `${appearance.sentenceCnSizePx}px` };
+  const activeStep = PHASE_STEP[phase];
+  const inTrace = phase === "trace" || phase === "traceEx1" || phase === "traceEx2";
 
   return (
     <div
-      className="mx-auto p-4 sm:p-6 flex flex-col items-center gap-6 select-none"
-      style={{ width: `${appearance.cardWidthPct}%`, maxWidth: "100%" }}
+      className="mx-auto flex max-w-[1440px] flex-col items-center gap-6 p-4 select-none sm:p-6 lg:px-10"
+      style={{ width: `${appearance.cardWidthPct}%` }}
       onClick={onTapNav}
     >
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
@@ -324,6 +337,23 @@ function LearnInner() {
         <div className="mt-2 h-1.5 w-full rounded-full bg-black/10 overflow-hidden">
           <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${(idx / words.length) * 100}%` }} />
         </div>
+        <ol className="mt-4 grid grid-cols-4 gap-2" aria-label="学习步骤">
+          {LEARN_STEPS.map((label, stepIndex) => (
+            <li
+              key={label}
+              aria-current={stepIndex === activeStep ? "step" : undefined}
+              className={`rounded-xl px-3 py-2 text-center text-xs font-bold transition-colors sm:text-sm ${
+                stepIndex === activeStep
+                  ? "bg-foreground text-white shadow-md"
+                  : stepIndex < activeStep
+                    ? "bg-accent/18 text-foreground"
+                    : "bg-white/65 text-black/32"
+              }`}
+            >
+              <span className="mr-1.5 hidden sm:inline">{stepIndex + 1}</span>{label}
+            </li>
+          ))}
+        </ol>
       </div>
 
       {/* 大卡片 */}
@@ -408,27 +438,61 @@ function LearnInner() {
         {phase === "trace" && (
           <>
             <div className="text-black/40">{word.phonetic} · {word.meaningCn}</div>
-            <TypingTrainer target={word.text} onComplete={afterTrace} fontSizePx={Math.round(appearance.wordSizePx * 0.75)} />
+            <TypingTrainer
+              key={`${word.id}:word`}
+              target={word.text}
+              onComplete={afterTrace}
+              fontSizePx={Math.round(appearance.wordSizePx * 0.75)}
+            />
           </>
         )}
 
         {phase === "traceEx1" && (
           <>
             <div className="text-black/50">抄写例句 1 / 2</div>
-            <TypingTrainer target={word.example1} onComplete={() => setPhase("traceEx2")} fontSizePx={Math.round(appearance.sentenceSizePx * 1.2)} />
+            <TypingTrainer
+              key={`${word.id}:example1`}
+              target={word.example1}
+              onComplete={() => setPhase("traceEx2")}
+              fontSizePx={Math.round(appearance.sentenceSizePx * 1.2)}
+            />
           </>
         )}
 
         {phase === "traceEx2" && (
           <>
             <div className="text-black/50">抄写例句 2 / 2</div>
-            <TypingTrainer target={word.example2} onComplete={finishWord} fontSizePx={Math.round(appearance.sentenceSizePx * 1.2)} />
+            <TypingTrainer
+              key={`${word.id}:example2`}
+              target={word.example2}
+              onComplete={finishWord}
+              fontSizePx={Math.round(appearance.sentenceSizePx * 1.2)}
+            />
           </>
         )}
       </div>
 
-      <div className="text-black/40 text-sm bg-white/70 rounded-full px-4 py-1.5 text-center">
-        👆 {PHASE_HINT[phase]}
+      <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3">
+        <button
+          type="button"
+          onClick={goBack}
+          disabled={phase === "show" && idx === 0}
+          className="rounded-xl border border-black/10 bg-white/75 px-5 py-2.5 text-sm font-bold text-foreground transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          ← 上一步
+        </button>
+        <div className="text-center text-sm text-black/42">{PHASE_HINT[phase]}</div>
+        {inTrace ? (
+          <span className="rounded-xl bg-accent/12 px-5 py-2.5 text-sm font-bold text-foreground">输入完成后按回车</span>
+        ) : (
+          <button
+            type="button"
+            onClick={advance}
+            className="rounded-xl bg-foreground px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+          >
+            下一步 →
+          </button>
+        )}
       </div>
     </div>
   );

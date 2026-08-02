@@ -1,12 +1,16 @@
 {
   "name": "vocab-app",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3003",
     "build": "next build",
     "build:client": "prisma generate && next build",
     "start": "prisma migrate deploy && next start -p 3003",
+    "test": "tsx --test tests/**/*.test.ts tests/**/*.test.tsx",
+    "test:watch": "tsx --test --watch tests/**/*.test.ts tests/**/*.test.tsx",
+    "check:fast": "npm test && npm run lint",
+    "check": "npm test && npm run lint && npm run build",
     "lint": "eslint",
     "deploy": "bash scripts/deploy.sh"
   },
