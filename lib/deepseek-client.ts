@@ -1,4 +1,10 @@
 import { getAIConfig } from "./settings";
+import {
+  describeAiResource,
+  findAiResource,
+  storeAiResource,
+  type AiResourceIdentity,
+} from "./ai-resources";
 
 export interface DeepSeekMessage {
   role: "system" | "user" | "assistant";
@@ -30,8 +36,24 @@ function extractJson(content: string): unknown {
   }
 }
 
-export async function requestDeepSeekText(messages: DeepSeekMessage[], temperature = 0.2, maxAttempts = 2): Promise<string> {
-  const cfg = await getAIConfig();
+interface DeepSeekRuntimeConfig {
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  thinking: boolean;
+}
+
+export interface DeepSeekResourceResult {
+  content: string;
+  cached: boolean;
+  cacheKey: string;
+}
+
+async function fetchDeepSeekText(
+  cfg: DeepSeekRuntimeConfig,
+  messages: DeepSeekMessage[],
+  temperature: number,
+): Promise<string> {
   if (!cfg.apiKey) throw new DeepSeekRequestError("DeepSeek API Key 未配置");
   const body = {
     model: cfg.model,
@@ -41,56 +63,121 @@ export async function requestDeepSeekText(messages: DeepSeekMessage[], temperatu
     ...(cfg.thinking ? {} : { thinking: { type: "disabled" } }),
   };
 
-  let lastError: unknown;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${cfg.apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 500);
+    throw new DeepSeekRequestError(`DeepSeek HTTP ${res.status}: ${detail}`, res.status >= 500);
+  }
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new DeepSeekRequestError("DeepSeek 返回内容为空", true);
+  }
+  return content;
+}
+
+const inFlightResources = new Map<string, Promise<string>>();
+
+async function requestDeepSeekResource(
+  identity: AiResourceIdentity,
+  cfg: DeepSeekRuntimeConfig,
+  maxAttempts: number,
+  validateContent?: (content: string) => unknown,
+): Promise<DeepSeekResourceResult> {
+  const lookup = describeAiResource(identity);
+  const cached = await findAiResource(identity);
+  if (cached) {
     try {
-      const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (!res.ok) {
-        const detail = (await res.text()).slice(0, 500);
-        const retryable = res.status >= 500;
-        const error = new DeepSeekRequestError(`DeepSeek HTTP ${res.status}: ${detail}`, retryable);
-        if (!retryable || attempt === maxAttempts - 1) throw error;
-        lastError = error;
-        continue;
-      }
-      const data = await res.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== "string" || !content.trim()) {
-        throw new DeepSeekRequestError("DeepSeek 返回内容为空", true);
-      }
-      return content;
-    } catch (error) {
-      lastError = error;
-      const retryable = !(error instanceof DeepSeekRequestError) || error.retryable;
-      if (!retryable || attempt === maxAttempts - 1) throw error;
+      validateContent?.(cached.content);
+      return { content: cached.content, cached: true, cacheKey: cached.cacheKey };
+    } catch {
+      // 旧缓存若不符合新的校验规则，就用同一缓存键重新生成并覆盖。
     }
   }
-  throw lastError;
+
+  const running = inFlightResources.get(lookup.cacheKey);
+  if (running) {
+    const content = await running;
+    validateContent?.(content);
+    return { content, cached: true, cacheKey: lookup.cacheKey };
+  }
+
+  const work = (async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const content = await fetchDeepSeekText(cfg, identity.messages, identity.temperature);
+        validateContent?.(content);
+        await storeAiResource(identity, content);
+        return content;
+      } catch (error) {
+        lastError = error;
+        const retryable = !(error instanceof DeepSeekRequestError) || error.retryable;
+        if (!retryable || attempt === maxAttempts - 1) throw error;
+      }
+    }
+    throw lastError;
+  })();
+  inFlightResources.set(lookup.cacheKey, work);
+  try {
+    return { content: await work, cached: false, cacheKey: lookup.cacheKey };
+  } finally {
+    inFlightResources.delete(lookup.cacheKey);
+  }
+}
+
+export async function requestDeepSeekTextWithMeta(
+  featureKey: string,
+  messages: DeepSeekMessage[],
+  temperature = 0.2,
+  maxAttempts = 2,
+  validateContent?: (content: string) => unknown,
+): Promise<DeepSeekResourceResult> {
+  const cfg = await getAIConfig();
+  return requestDeepSeekResource({
+    featureKey,
+    model: cfg.model,
+    baseUrl: cfg.baseUrl,
+    thinking: cfg.thinking,
+    temperature,
+    messages,
+  }, cfg, maxAttempts, validateContent);
+}
+
+export async function requestDeepSeekText(
+  featureKey: string,
+  messages: DeepSeekMessage[],
+  temperature = 0.2,
+  maxAttempts = 2,
+  validateContent?: (content: string) => unknown,
+): Promise<string> {
+  return (await requestDeepSeekTextWithMeta(featureKey, messages, temperature, maxAttempts, validateContent)).content;
 }
 
 export async function requestDeepSeekJson<T>(
+  featureKey: string,
   messages: DeepSeekMessage[],
   validate: (value: unknown) => T,
   temperature = 0.2,
 ): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      return validate(extractJson(await requestDeepSeekText(messages, temperature, 1)));
-    } catch (error) {
-      lastError = error;
-      if (error instanceof DeepSeekRequestError && !error.retryable) throw error;
-    }
-  }
-  throw lastError;
+  const cfg = await getAIConfig();
+  const result = await requestDeepSeekResource({
+    featureKey,
+    model: cfg.model,
+    baseUrl: cfg.baseUrl,
+    thinking: cfg.thinking,
+    temperature,
+    messages,
+  }, cfg, 2, (content) => validate(extractJson(content)));
+  return validate(extractJson(result.content));
 }
 
 const writingLocks = new Set<string>();

@@ -6,6 +6,7 @@ import SegmentWord from "@/components/SegmentWord";
 import FitWord from "@/components/FitWord";
 import ParentWritingPanel from "@/components/ParentWritingPanel";
 import DailyWordManager from "@/components/DailyWordManager";
+import AdminAiPrompts from "@/components/AdminAiPrompts";
 import { APPEARANCE_RANGES, DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appearance";
 
 interface UserRow {
@@ -65,7 +66,6 @@ interface AISettings {
   model: string;
   baseUrl: string;
   apiKey: string;
-  prompt: string;
   thinking: boolean;
   overridden: { model: boolean; baseUrl: boolean; apiKey: boolean; prompt: boolean };
 }
@@ -131,7 +131,7 @@ const RESULT_LABEL: Record<string, string> = {
 };
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"manage" | "settings">("manage"); // 页签：管理 / 设置
+  const [tab, setTab] = useState<"manage" | "settings" | "ai-prompts">("manage"); // 页签：管理 / 设置 / AI 提示词
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [selected, setSelected] = useState<UserRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
@@ -307,7 +307,6 @@ export default function AdminPage() {
         aiModel: ai.model,
         aiBaseUrl: ai.baseUrl,
         aiApiKey: ai.apiKey,
-        aiPrompt: ai.prompt,
         aiThinking: ai.thinking,
       }),
     });
@@ -798,6 +797,7 @@ export default function AdminPage() {
         {([
           { v: "manage", label: "管理" },
           { v: "settings", label: "设置" },
+          { v: "ai-prompts", label: "AI 提示词" },
         ] as const).map((o) => (
           <button
             key={o.v}
@@ -1653,11 +1653,13 @@ export default function AdminPage() {
       </section>
       )}
 
-      {/* AI 解析设置 */}
+      {tab === "ai-prompts" && <AdminAiPrompts />}
+
+      {/* AI 连接设置 */}
       {tab === "settings" && ai && (
         <section className="bg-white rounded-2xl shadow p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-xl">AI 解析设置</h2>
+            <h2 className="font-bold text-xl">AI 连接设置</h2>
             {aiMsg && <span className="text-sm text-green-600">{aiMsg}</span>}
           </div>
           <div className="flex flex-col gap-4 max-w-3xl">
@@ -1692,15 +1694,6 @@ export default function AdminPage() {
                 autoComplete="off"
               />
             </label>
-            <label className="text-sm text-black/60">
-              提示词（%s 为单元原始文本占位符）
-              <textarea
-                value={ai.prompt}
-                onChange={(e) => setAi({ ...ai, prompt: e.target.value })}
-                rows={10}
-                className="mt-1 block border rounded-lg px-3 py-2 w-full outline-none focus:ring-2 ring-accent font-mono text-xs leading-relaxed"
-              />
-            </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
               <span className="text-black/60">思考模式</span>
               <button
@@ -1722,7 +1715,7 @@ export default function AdminPage() {
               保存 AI 设置
             </button>
             <p className="text-xs text-black/40">
-              保存后对新发起的解析调用立即生效。留空并保存可恢复为环境变量 / 默认值（默认模型 deepseek-v4-flash，思考模式关闭）。
+              保存后对新发起的 AI 调用立即生效。各功能提示词请在“AI 提示词”栏目编辑和调试；连接项留空可恢复为环境变量 / 默认值。
             </p>
           </div>
         </section>

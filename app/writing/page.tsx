@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { BilingualTeachingText, WritingPrompt } from "@/lib/writing-types";
 
 type Json = Record<string, unknown>;
 
@@ -47,7 +48,7 @@ interface Task {
   id: string;
   orderIndex: number;
   type: string;
-  prompt: { instruction: string; chinese?: string; example?: string; variation?: string; length?: string };
+  prompt: WritingPrompt;
   status: string;
   hintLevel: number;
   failedRounds: number;
@@ -319,13 +320,132 @@ function PracticeMenu(props: { busy: boolean; active: Overview["activeSession"];
   </div>;
 }
 
+function teachingText(text: BilingualTeachingText, language: "en" | "zh") {
+  return language === "en" ? text.en : text.zh;
+}
+
+export function TeachingScaffold({ prompt, showExample, setShowExample }: { prompt: WritingPrompt; showExample: boolean; setShowExample: (value: boolean) => void }) {
+  const [language, setLanguage] = useState<"en" | "zh">("en");
+  const [translations, setTranslations] = useState<Set<number>>(new Set());
+  const sentences = prompt.model?.sentences ?? [];
+
+  function toggleTranslation(index: number) {
+    setTranslations((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  if (!prompt.prewriting && !sentences.length && !prompt.example && !prompt.variation) return null;
+
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      {prompt.prewriting && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Before you write</div>
+              <h3 className="mt-1 text-lg font-black">{language === "en" ? "Think first. Write second." : "先想清楚，再落笔"}</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLanguage((current) => current === "en" ? "zh" : "en")}
+              aria-label={language === "en" ? "切换为中文讲解" : "Switch explanations to English"}
+              className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800"
+            >
+              {language === "en" ? "中文讲解" : "English"}
+            </button>
+          </div>
+          <p className="mt-3 font-bold leading-7 text-amber-950">{teachingText(prompt.prewriting.coach, language)}</p>
+          <div className="mt-3 rounded-xl bg-white/75 p-3 text-sm leading-6">
+            <b>{language === "en" ? "Today’s goal: " : "本题目标："}</b>
+            {teachingText(prompt.prewriting.goal, language)}
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <h4 className="text-sm font-black text-amber-900">{language === "en" ? "Your route" : "下笔路线"}</h4>
+              <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-amber-950">
+                {prompt.prewriting.steps.map((step, index) => <li key={index}>{teachingText(step, language)}</li>)}
+              </ol>
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-amber-900">{language === "en" ? "Quick check" : "提交前检查"}</h4>
+              <ul className="mt-2 space-y-1.5 text-sm leading-6 text-amber-950">
+                {prompt.prewriting.checklist.map((item, index) => <li key={index} className="flex gap-2"><span aria-hidden="true">□</span><span>{teachingText(item, language)}</span></li>)}
+              </ul>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {sentences.length > 0 ? (
+        showExample ? (
+          <section className="rounded-2xl border border-accent/25 bg-white p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Model & explanation</div>
+                <h3 className="mt-1 text-lg font-black">{language === "en" ? "See how the sentence works" : "看懂这句话怎么工作"}</h3>
+              </div>
+              {!prompt.prewriting && (
+                <button type="button" onClick={() => setLanguage((current) => current === "en" ? "zh" : "en")} className="rounded-full border border-black/10 px-3 py-1.5 text-xs font-bold">
+                  {language === "en" ? "中文讲解" : "English"}
+                </button>
+              )}
+            </div>
+            <div className="mt-4 flex flex-col gap-4">
+              {sentences.map((sentence, index) => {
+                const translated = translations.has(index);
+                const translationId = `model-translation-${index}`;
+                return (
+                  <article key={`${sentence.english}-${index}`} className="rounded-xl bg-background p-4">
+                    <div className="flex items-start gap-3">
+                      <p className="min-w-0 flex-1 text-lg font-bold leading-8">{sentence.english}</p>
+                      <button
+                        type="button"
+                        onClick={() => toggleTranslation(index)}
+                        aria-label={translated ? "隐藏中文翻译" : "显示中文翻译"}
+                        aria-pressed={translated}
+                        aria-controls={translationId}
+                        title={translated ? "隐藏中文翻译" : "显示中文翻译"}
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-sm font-black transition ${translated ? "border-accent bg-accent text-white" : "border-black/10 bg-white text-black/55 hover:border-accent hover:text-accent"}`}
+                      >
+                        T
+                      </button>
+                    </div>
+                    {translated && <p id={translationId} className="mt-2 rounded-lg bg-white px-3 py-2 text-sm leading-6 text-black/65">{sentence.translationZh}</p>}
+                    <div className="mt-4 border-t border-black/8 pt-4 text-sm leading-6">
+                      <p><span className="mr-2 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-bold text-accent">{language === "en" ? "JOB" : "作用"}</span>{teachingText(sentence.role, language)}</p>
+                      <p className="mt-3 text-black/70">{teachingText(sentence.explanation, language)}</p>
+                      <div className="mt-3 rounded-lg bg-white p-3"><b>{language === "en" ? "Pattern to steal: " : "可以拿走的骨架："}</b><code className="break-words text-accent">{sentence.pattern}</code></div>
+                      <p className="mt-3 text-black/60"><b>{language === "en" ? "Watch out: " : "容易踩的坑："}</b>{teachingText(sentence.pitfall, language)}</p>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <button type="button" onClick={() => setShowExample(false)} className="mt-4 text-sm font-bold underline underline-offset-4">{language === "en" ? "I understand it — hide the model and let me write" : "我看懂了，隐藏示范开始仿写"}</button>
+          </section>
+        ) : (
+          <button type="button" onClick={() => setShowExample(true)} className="w-fit text-sm font-bold text-black/45 underline underline-offset-4">{language === "en" ? "Show the model one more time" : "暂时再看一次示范"}</button>
+        )
+      ) : prompt.example ? (
+        <div>{showExample ? <div className="rounded-xl border border-accent/25 bg-white p-4"><div className="text-xs font-bold text-accent">示范句</div><p className="mt-1 text-lg">{prompt.example}</p><button type="button" onClick={() => setShowExample(false)} className="mt-3 text-sm font-bold underline">我记住了，隐藏示范</button></div> : <button type="button" onClick={() => setShowExample(true)} className="text-sm text-black/40 underline">暂时再看一次示范</button>}</div>
+      ) : null}
+
+      {prompt.variation && <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm leading-6 text-violet-950"><b>变化要求：</b>{prompt.variation}</div>}
+    </div>
+  );
+}
+
 function Workspace(props: { session: Session; activeTask: Task | null; latestAttempt: Attempt | null; flashFeedback: { feedback: Feedback; passed: boolean } | null; draft: string; setDraft: (x: string) => void; busy: boolean; chat: string; setChat: (x: string) => void; hint: Json | null; showExample: boolean; setShowExample: (x: boolean) => void; submit: () => Promise<void>; sendChat: () => Promise<void>; unlockHint: () => Promise<void>; close: () => void }) {
   const { session, activeTask } = props;
   return <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
     <section className="rounded-[2rem] bg-white p-5 shadow sm:p-7">
       <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold uppercase tracking-wider text-accent">{session.kind === "review" ? "错点复练" : "当前练习"}</div><h2 className="mt-1 text-2xl font-black">{session.title}</h2></div><button onClick={props.close} className="text-sm text-black/40 underline">返回</button></div>
       {session.mode === "translation" && session.tasks.length === 0 ? <div className="mt-6"><div className="flex max-h-96 flex-col gap-3 overflow-y-auto">{session.messages.map((message) => <div key={message.id} className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${message.role === "user" ? "ml-auto bg-foreground text-white" : "bg-black/[.04]"}`}>{message.content}</div>)}</div><div className="mt-4 flex gap-2"><textarea value={props.chat} onChange={(e) => props.setChat(e.target.value)} maxLength={1000} rows={3} placeholder="用中文说说你的想法…" className="min-w-0 flex-1 rounded-xl border border-black/10 p-3" /><button disabled={props.busy || !props.chat.trim()} onClick={props.sendChat} className="rounded-xl bg-foreground px-5 font-bold text-white disabled:opacity-40">发送</button></div></div> : activeTask ? <div className="mt-6">
-        <div className="rounded-2xl bg-background p-5"><div className="text-sm font-bold text-accent">第 {activeTask.orderIndex + 1} 题</div><p className="mt-2 text-lg font-bold leading-8">{activeTask.prompt.instruction}</p>{activeTask.prompt.chinese && <div className="mt-3 whitespace-pre-wrap rounded-xl bg-white p-4">{activeTask.prompt.chinese}</div>}{activeTask.prompt.variation && <p className="mt-2 text-sm text-black/55">变化要求：{activeTask.prompt.variation}</p>}{activeTask.prompt.example && <div className="mt-4">{props.showExample ? <div className="rounded-xl border border-accent/25 bg-white p-4"><div className="text-xs font-bold text-accent">示范句</div><p className="mt-1 text-lg">{activeTask.prompt.example}</p><button onClick={() => props.setShowExample(false)} className="mt-3 text-sm font-bold underline">我记住了，隐藏示范</button></div> : <button onClick={() => props.setShowExample(true)} className="text-sm text-black/40 underline">暂时再看一次示范</button>}</div>}</div>
+        <div className="rounded-2xl bg-background p-5"><div className="text-sm font-bold text-accent">第 {activeTask.orderIndex + 1} 题</div><p className="mt-2 text-lg font-bold leading-8">{activeTask.prompt.instruction}</p>{activeTask.prompt.chinese && <div className="mt-3 whitespace-pre-wrap rounded-xl bg-white p-4">{activeTask.prompt.chinese}</div>}<TeachingScaffold key={activeTask.id} prompt={activeTask.prompt} showExample={props.showExample} setShowExample={props.setShowExample} /></div>
         {props.flashFeedback ? <FeedbackCard feedback={props.flashFeedback.feedback} passed={props.flashFeedback.passed} /> : props.latestAttempt && <FeedbackCard feedback={props.latestAttempt.feedback} passed={props.latestAttempt.passed} />}
         {props.hint && <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm"><div className="font-bold text-blue-700">本级帮助</div><pre className="mt-2 whitespace-pre-wrap font-sans text-blue-900">{Object.entries(props.hint).map(([key, value]) => `${key === "keywords" ? "关键词" : key === "frame" ? "句型骨架" : key === "modelAnswer" ? "示范" : "分步重建"}：${Array.isArray(value) ? value.join(" · ") : String(value)}`).join("\n")}</pre>{"modelAnswer" in props.hint && <button onClick={() => props.setShowExample(false)} className="mt-2 font-bold underline">隐藏示范，开始回忆重写</button>}</div>}
         <textarea value={props.draft} onChange={(e) => props.setDraft(e.target.value)} maxLength={5000} rows={activeTask.type === "article" ? 10 : 5} placeholder="在这里写英文…" className="mt-5 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />

@@ -113,7 +113,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ sessionId: session.id }, { status: 201 });
     } else {
       const imitation = await withWritingAiLock(user.id, () => generateImitation(context));
-      prompt = { instruction: imitation.instruction, example: imitation.example, variation: imitation.variation };
+      prompt = imitation;
       title = "示范仿写";
       type = "imitation";
     }

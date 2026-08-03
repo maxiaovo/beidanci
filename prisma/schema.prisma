@@ -194,6 +194,24 @@ model Setting {
   value String
 }
 
+// DeepSeek 生成结果是可复用资源：相同功能、提示词、模型与输入命中同一份产物。
+model AiResource {
+  id          String   @id @default(cuid())
+  cacheKey    String   @unique
+  featureKey  String
+  model       String
+  promptHash  String
+  inputHash   String
+  request     String
+  response    String
+  useCount    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastUsedAt  DateTime @default(now())
+
+  @@index([featureKey, updatedAt])
+}
+
 // 首页“每日自然单词”：图片、单词、音标与 TTS 音频由同一资源统一管理。
 model DailyWordResource {
   id        String   @id

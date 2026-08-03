@@ -1,6 +1,6 @@
 // DeepSeek：把单元原始文本分析成结构化单词 JSON
 // 模型/Key/提示词优先取管理员在 Setting 表中的配置，默认 deepseek-v4-flash、关闭思考模式
-import { getAIConfig } from "./settings";
+import { getAiPrompt } from "./ai-prompts";
 import { requestDeepSeekText } from "./deepseek-client";
 
 export interface AnalyzedWord {
@@ -18,8 +18,14 @@ export interface AnalyzedWord {
 }
 
 export async function analyzeUnitText(rawText: string): Promise<AnalyzedWord[]> {
-  const cfg = await getAIConfig();
-  const content = await requestDeepSeekText([{ role: "user", content: cfg.prompt.replace("%s", rawText) }], 0.2);
+  const prompt = await getAiPrompt("vocabulary.unit_analysis");
+  const content = await requestDeepSeekText(
+    "vocabulary.unit_analysis",
+    [{ role: "user", content: prompt.replace("%s", rawText) }],
+    0.2,
+    2,
+    parseWordsJson,
+  );
   return parseWordsJson(content);
 }
 
