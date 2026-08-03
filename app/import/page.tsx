@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import DailyWordManager from "@/components/DailyWordManager";
 
 type Phase = "queued" | "uploading" | "waiting" | "processing" | "ready" | "stopped" | "error";
 
@@ -222,10 +223,10 @@ export default function ImportPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="font-bold text-2xl mb-6">导入单词书</h1>
+    <div className="max-w-6xl mx-auto p-6">
+      <h1 className="max-w-xl font-bold text-2xl mb-6">导入单词书</h1>
 
-      <form onSubmit={submit} className="bg-white rounded-2xl shadow p-6 flex flex-col gap-4">
+      <form onSubmit={submit} className="max-w-xl bg-white rounded-2xl shadow p-6 flex flex-col gap-4">
         <div>
           <label className="text-sm text-black/60 block mb-1">单词文件（可多选，docx / xlsx / txt / csv）</label>
           <input
@@ -296,7 +297,7 @@ export default function ImportPage() {
       </form>
 
       {tasks.length > 0 && (
-        <div className="mt-6 flex flex-col gap-3">
+        <div className="mt-6 max-w-xl flex flex-col gap-3">
           <h2 className="font-bold text-lg">导入队列</h2>
           {tasks.map((t) => {
             const p = progressOf(t);
@@ -368,6 +369,12 @@ export default function ImportPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="mt-8">
+          <DailyWordManager title="导入与首页共用的自然单词资源" />
         </div>
       )}
     </div>

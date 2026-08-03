@@ -70,7 +70,7 @@ export default function Nav() {
   const linkCls = (href: string) =>
     `px-3 py-1.5 rounded-full text-sm transition-colors ${
       isActive(href)
-        ? "bg-foreground text-white"
+        ? "nav-link-active"
         : "text-foreground/70 hover:bg-black/5"
     }`;
 

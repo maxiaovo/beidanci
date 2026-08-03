@@ -19,7 +19,7 @@ model User {
   dailyNewTarget    Int      @default(20)
   dailyReviewTarget Int      @default(100)
   defaultCheckMode  String   @default("spell") // spell | choice
-  themePreset       String? // 主题预设 id：purple | green | blue | warm | dark | custom
+  themePreset       String? // 主题预设 id：macaron | aegean | purple | green | blue | warm | dark | custom
   themeCustom       String? // JSON：{background, foreground, accent, accent2}
   highlightColor    String? // 学习页高亮颜色（hex）
   wordSize          String   @default("big") // 学习页单词字号：big | bigger | biggest
@@ -192,6 +192,21 @@ model Message {
 model Setting {
   key   String @id
   value String
+}
+
+// 首页“每日自然单词”：图片、单词、音标与 TTS 音频由同一资源统一管理。
+model DailyWordResource {
+  id        String   @id
+  daySlot   Int      @unique // 1=周一 … 7=周日
+  word      String
+  phonetic  String
+  category  String   @default("nature") // plant | land | marine | bird
+  imageAlt  String   @default("")
+  imageFile String
+  audioFile String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Book {

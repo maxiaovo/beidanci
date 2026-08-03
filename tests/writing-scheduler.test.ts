@@ -10,7 +10,7 @@ test("writing review advances through 1, 3, 7, 14 and 30 day stages", () => {
   for (let index = 0; index < WRITING_REVIEW_INTERVALS.length; index++) {
     const result = decideWritingReview(current, true, true, now);
     assert.equal(result.stage, index + 1);
-    const expectedDays = index === WRITING_REVIEW_INTERVALS.length - 1 ? 30 : WRITING_REVIEW_INTERVALS[index + 1];
+    const expectedDays: number = index === WRITING_REVIEW_INTERVALS.length - 1 ? 30 : WRITING_REVIEW_INTERVALS[index + 1];
     assert.equal((+result.nextReviewAt - +now) / 86_400_000, expectedDays);
     current = result;
   }

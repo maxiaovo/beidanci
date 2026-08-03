@@ -1,8 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f5ff;
-  --foreground: #3a2e5c;
+  --background: #fff7ed;
+  --foreground: #4f3642;
+  --surface: #fffcf8;
+  --surface-muted: #fff2f4;
+  --theme-border: #f2d8d9;
+  --nav-active: #b8e3d1;
+  --nav-active-foreground: #3e4240;
+  --hero-background: #fff8e9;
+  --hero-foreground: #4f3642;
+  --hero-border: #f4a9b6;
+  --hero-eyebrow: #ef8c9d;
+  --hero-control-background: #ffffffb8;
+  --action-background: #d95e78;
+  --action-foreground: #fff;
+  --module-word-background: #effaf6;
+  --module-word-border: #52b9a9;
+  --module-writing-background: #faf4ff;
+  --module-writing-accent: #a987d5;
+  --module-future-border: #f4a9b6;
+  --section-eyebrow: #a987d5;
+  --hero-image-opacity: 0.44;
+  --hero-resource-visibility: visible;
 }
 
 @theme inline {
@@ -19,6 +39,112 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.nav-link-active {
+  background: var(--nav-active);
+  color: var(--nav-active-foreground);
+}
+
+.dashboard-hero {
+  background: var(--hero-background);
+  border: 1px solid var(--hero-border);
+  color: var(--hero-foreground);
+  box-shadow: 0 24px 60px color-mix(in srgb, var(--hero-border) 22%, transparent);
+}
+
+.dashboard-hero-image {
+  opacity: var(--hero-image-opacity);
+  visibility: var(--hero-resource-visibility);
+  object-position: right center;
+  mask-image: linear-gradient(to right, transparent 14%, rgba(0, 0, 0, 0.25) 34%, #000 56%);
+}
+
+.dashboard-hero-eyebrow {
+  color: var(--hero-eyebrow);
+}
+
+.dashboard-hero-muted {
+  color: color-mix(in srgb, var(--hero-foreground) 72%, transparent);
+}
+
+.dashboard-hero-strong {
+  color: var(--hero-foreground);
+}
+
+.dashboard-hero-settings {
+  border-color: color-mix(in srgb, var(--hero-foreground) 32%, transparent);
+  background: var(--hero-control-background);
+  color: var(--hero-foreground);
+}
+
+.dashboard-hero-settings:hover {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.dashboard-daily-word {
+  color: var(--hero-foreground);
+  visibility: var(--hero-resource-visibility);
+}
+
+.dashboard-action {
+  background: var(--action-background);
+  color: var(--action-foreground);
+  --tw-ring-color: color-mix(in srgb, var(--action-background) 35%, transparent);
+}
+
+.module-card {
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.module-card-words {
+  background: var(--module-word-background);
+  color: var(--foreground);
+}
+
+.module-card-words.is-active {
+  border-color: var(--module-word-border);
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--module-word-border) 22%, transparent);
+}
+
+.module-card-writing {
+  background: var(--module-writing-background);
+  color: var(--module-writing-accent);
+}
+
+.module-card-writing.is-active {
+  border-color: var(--module-writing-accent);
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--module-writing-accent) 20%, transparent);
+}
+
+.module-card.is-inactive {
+  border-color: color-mix(in srgb, currentColor 10%, transparent);
+  opacity: 0.72;
+}
+
+.module-card:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.module-card-future {
+  border-color: var(--module-future-border);
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+}
+
+.theme-surface {
+  border-color: var(--theme-border);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+}
+
+.theme-section-eyebrow {
+  color: var(--section-eyebrow);
+}
+
+@media (max-width: 767px) {
+  .dashboard-hero-image {
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
+  }
 }
 
 /* 桌面端内容外框：页面共享同一条宽屏基线。 */

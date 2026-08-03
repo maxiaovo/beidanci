@@ -11,10 +11,11 @@ import {
   hexColor,
   THEME_PRESETS,
   type ThemeState,
-  type ThemeVars,
 } from "@/lib/theme";
 
-const CUSTOM_KEYS: { key: keyof ThemeVars; label: string }[] = [
+type ThemeColorKey = "background" | "foreground" | "accent" | "accent2";
+
+const CUSTOM_KEYS: { key: ThemeColorKey; label: string }[] = [
   { key: "background", label: "页面背景" },
   { key: "foreground", label: "主文字" },
   { key: "accent", label: "主强调色" },
@@ -170,7 +171,7 @@ export default function SettingsPage() {
     applyThemeVars(getThemeVars(next));
   }
 
-  function updateCustom(key: keyof ThemeVars, value: string) {
+  function updateCustom(key: ThemeColorKey, value: string) {
     const clean = hexColor(value);
     const next: ThemeState = {
       ...theme,

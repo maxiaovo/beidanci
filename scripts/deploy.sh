@@ -16,7 +16,7 @@ rsync -az --delete \
 echo "== 2/4 服务器上安装依赖并构建 =="
 # --include=dev：防止服务器环境 NODE_ENV=production 导致 devDependencies（tailwind/typescript）被跳过
 ssh -o BatchMode=yes "$SERVER" \
-  "cd ~/$REMOTE_DIR && npm ci --include=dev && ./node_modules/.bin/prisma generate && npm run build"
+  "cd ~/$REMOTE_DIR && npm ci --include=dev && ./node_modules/.bin/prisma generate && NODE_OPTIONS=--max-old-space-size=768 npm run typecheck && NODE_OPTIONS=--max-old-space-size=768 npm run build:update"
 
 echo "== 3/4 重启服务（start.sh.local 会自动执行 prisma migrate deploy）=="
 ssh -o BatchMode=yes "$SERVER" "sudo -n systemctl restart ledouniu-mx.service"

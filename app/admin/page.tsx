@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import SegmentWord from "@/components/SegmentWord";
 import FitWord from "@/components/FitWord";
 import ParentWritingPanel from "@/components/ParentWritingPanel";
+import DailyWordManager from "@/components/DailyWordManager";
 import { APPEARANCE_RANGES, DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appearance";
 
 interface UserRow {
@@ -1871,6 +1872,8 @@ export default function AdminPage() {
           </div>
         </section>
       )}
+
+      {tab === "manage" && <DailyWordManager title="首页每日自然单词" />}
 
       {/* 音频资源检查 */}
       {tab === "manage" && (

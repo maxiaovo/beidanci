@@ -24,7 +24,7 @@ export async function PATCH(req: Request) {
   // 主题设置
   if (typeof body.theme === "object" && body.theme !== null) {
     const { presetId, custom } = body.theme;
-    const validPresets = new Set(["purple", "green", "blue", "warm", "dark", "custom"]);
+    const validPresets = new Set(["macaron", "aegean", "purple", "green", "blue", "warm", "dark", "custom"]);
     if (validPresets.has(presetId)) {
       data.themePreset = presetId;
       if (presetId === "custom" && custom && typeof custom === "object") {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowRight,
   BookOpen,
@@ -13,11 +14,13 @@ import {
   PencilLine,
   Plus,
   Sparkle,
+  SpeakerHigh,
   Translate,
   X,
 } from "@phosphor-icons/react";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
 import BookShelf from "@/components/BookShelf";
+import type { DailyWordResource } from "@/components/DailyWordManager";
 
 interface BookInfo {
   id: string;
@@ -109,6 +112,7 @@ export default function Dashboard() {
   const [selectedBook, setSelectedBook] = useState<string>(AUTO);
   const [writing, setWriting] = useState<WritingOverview | null>(null);
   const [learningModule, setLearningModule] = useState<LearningModule>("words");
+  const [dailyWord, setDailyWord] = useState<DailyWordResource | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -117,12 +121,18 @@ export default function Dashboard() {
       const d = await r.json();
       if (d.user?.role === "parent") router.replace("/parent");
     });
+    const localDate = new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
     Promise.all([
       fetch("/api/books").then((r) => (r.status === 401 ? null : r.json())),
       fetch("/api/session").then((r) => (r.status === 401 ? null : r.json())),
       fetch("/api/plans").then((r) => (r.status === 401 ? null : r.json())),
       fetch("/api/writing/overview").then((r) => (r.ok ? r.json() : null)),
-    ]).then(([b, s, p, w]) => {
+      fetch(`/api/daily-words?date=${localDate}`).then((r) => (r.ok ? r.json() : null)),
+    ]).then(([b, s, p, w, daily]) => {
       if (!b || !s) {
         router.push("/login");
         return;
@@ -131,6 +141,7 @@ export default function Dashboard() {
       setSession(s);
       if (p?.plans) setPlanSettings(settingsFromPlans(p.plans));
       if (w) setWriting(w);
+      if (daily?.today) setDailyWord(daily.today);
       if (new URLSearchParams(window.location.search).get("plan") === "1") {
         setShowPlanSettings(true);
       }
@@ -254,6 +265,12 @@ export default function Dashboard() {
   const todayHref = isWords ? (due > 0 ? "/check?mode=review" : learnHref) : "/writing";
   const todayAction = isWords ? (due > 0 ? "开始今日复习" : "开始背单词") : writingAction;
 
+  const playDailyWord = () => {
+    if (!dailyWord?.audioFile) return;
+    const audio = new Audio(`/api/audio/${encodeURIComponent(dailyWord.audioFile)}`);
+    void audio.play();
+  };
+
   return (
     <div className="page-shell flex flex-col gap-6 sm:gap-8">
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
@@ -264,7 +281,7 @@ export default function Dashboard() {
             role="tab"
             aria-selected={isWords}
             onClick={() => setLearningModule("words")}
-            className={`flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 px-5 text-left transition sm:min-h-28 sm:w-52 sm:px-7 ${isWords ? "border-foreground bg-white shadow-[0_14px_32px_rgba(58,46,92,0.14)]" : "border-transparent bg-white/68 text-foreground/62 hover:bg-white"}`}
+            className={`module-card module-card-words flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 px-5 text-left transition sm:min-h-28 sm:w-52 sm:px-7 ${isWords ? "is-active" : "is-inactive"}`}
           >
             <BookOpen size={30} weight={isWords ? "fill" : "duotone"} />
             <span>
@@ -277,7 +294,7 @@ export default function Dashboard() {
             role="tab"
             aria-selected={!isWords}
             onClick={() => setLearningModule("writing")}
-            className={`flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 px-5 text-left transition sm:min-h-28 sm:w-52 sm:px-7 ${!isWords ? "border-foreground bg-white shadow-[0_14px_32px_rgba(58,46,92,0.14)]" : "border-transparent bg-white/68 text-foreground/62 hover:bg-white"}`}
+            className={`module-card module-card-writing flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 px-5 text-left transition sm:min-h-28 sm:w-52 sm:px-7 ${!isWords ? "is-active" : "is-inactive"}`}
           >
             <PencilLine size={30} weight={!isWords ? "fill" : "duotone"} />
             <span>
@@ -285,7 +302,7 @@ export default function Dashboard() {
               <span className="mt-1 block text-xs opacity-55">表达与改写</span>
             </span>
           </button>
-          <div className="flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 border-dashed border-black/10 bg-white/35 px-5 text-left text-foreground/35 sm:min-h-28 sm:w-52 sm:px-7">
+          <div className="module-card-future flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 border-dashed px-5 text-left text-foreground/42 sm:min-h-28 sm:w-52 sm:px-7">
             <Plus size={28} weight="bold" />
             <span>
               <strong className="block text-lg font-black sm:text-xl">更多学习</strong>
@@ -295,10 +312,22 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden rounded-[2rem] bg-foreground px-6 py-7 text-white shadow-[0_24px_60px_rgba(58,46,92,0.2)] sm:px-8 sm:py-9 lg:px-10">
-        <div className="relative mb-7 flex items-start justify-between gap-4">
+      <section className="dashboard-hero relative overflow-hidden rounded-[2rem] px-6 py-7 sm:px-8 sm:py-9 lg:min-h-[27rem] lg:px-10">
+        {dailyWord && (
+          <Image
+            src={`/api/daily-words/images/${encodeURIComponent(dailyWord.imageFile)}?v=${encodeURIComponent(dailyWord.updatedAt)}`}
+            alt=""
+            fill
+            priority
+            unoptimized
+            aria-hidden="true"
+            className="dashboard-hero-image pointer-events-none object-contain object-right"
+            sizes="(min-width: 1024px) 92vw, 100vw"
+          />
+        )}
+        <div className="relative z-10 mb-7 flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs font-bold tracking-[0.18em] text-white/55 uppercase">Up next</div>
+            <div className="dashboard-hero-eyebrow text-xs font-bold tracking-[0.2em] uppercase">Up next</div>
             <h1 className="mt-1 text-2xl font-black sm:text-3xl">今日下一步</h1>
           </div>
           <button
@@ -306,47 +335,67 @@ export default function Dashboard() {
             onClick={() => setShowPlanSettings(true)}
             aria-label="设置每日任务"
             title="设置每日任务"
-            className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-3.5 text-sm font-bold text-white transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25 sm:px-4"
+            className="dashboard-hero-settings inline-flex min-h-11 items-center gap-2 rounded-2xl border px-3.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 sm:px-4"
           >
             <GearSix size={21} weight="bold" />
             <span className="hidden sm:inline">设置每日任务</span>
           </button>
         </div>
-        <div className="grid items-end gap-7 lg:grid-cols-[1fr_auto]">
+        <div className="relative z-10 grid items-end gap-7 lg:grid-cols-[minmax(0,1fr)_19rem]">
           <div>
             <h2 className="max-w-4xl text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">{todayTitle}</h2>
-            <p className="mt-4 max-w-3xl text-base leading-7 text-white/70 lg:text-lg">{todayDescription}</p>
-            <div className="mt-6 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/65">
+            <p className="dashboard-hero-muted mt-4 max-w-3xl text-base leading-7 lg:max-w-2xl lg:text-lg">{todayDescription}</p>
+            <div className="dashboard-hero-muted mt-6 flex flex-wrap gap-x-7 gap-y-3 text-sm">
               {isWords ? (
                 <>
-                  <span><strong className="mr-1.5 text-xl text-white">{session?.stats.reviewsDoneToday ?? 0}</strong>今日复习</span>
-                  <span><strong className="mr-1.5 text-xl text-white">{session?.stats.learnedToday ?? 0}</strong>今日新词</span>
-                  <span><strong className="mr-1.5 text-xl text-white">{learnedWords}</strong>累计学习</span>
+                  <span><strong className="dashboard-hero-strong mr-1.5 text-xl">{session?.stats.reviewsDoneToday ?? 0}</strong>今日复习</span>
+                  <span><strong className="dashboard-hero-strong mr-1.5 text-xl">{session?.stats.learnedToday ?? 0}</strong>今日新词</span>
+                  <span><strong className="dashboard-hero-strong mr-1.5 text-xl">{learnedWords}</strong>累计学习</span>
                 </>
               ) : (
                 <>
-                  <span><strong className="mr-1.5 text-xl text-white">{writing?.review.todayCount ?? 0}</strong>待复练错点</span>
-                  <span><strong className="mr-1.5 text-xl text-white">{writing?.activeSession ? 1 : 0}</strong>进行中的练习</span>
-                  <span><strong className="mr-1.5 text-xl text-white">{writingNeedsAssessment ? "待完成" : "已完成"}</strong>系统评估</span>
+                  <span><strong className="dashboard-hero-strong mr-1.5 text-xl">{writing?.review.todayCount ?? 0}</strong>待复练错点</span>
+                  <span><strong className="dashboard-hero-strong mr-1.5 text-xl">{writing?.activeSession ? 1 : 0}</strong>进行中的练习</span>
+                  <span><strong className="dashboard-hero-strong mr-1.5 text-xl">{writingNeedsAssessment ? "待完成" : "已完成"}</strong>系统评估</span>
                 </>
               )}
             </div>
           </div>
-          <Link
-            href={todayHref}
-            className="inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-white px-7 py-4 text-lg font-black text-foreground shadow-lg transition hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/35"
-          >
-            {todayAction}
-            <ArrowRight size={22} weight="bold" />
-          </Link>
+          <div className="flex flex-col items-stretch gap-8 lg:min-h-52 lg:justify-end">
+            {dailyWord && (
+              <div className="dashboard-daily-word self-start lg:self-center">
+                <div className="text-lg font-black tracking-wide">{dailyWord.word}</div>
+                <div className="mt-1 flex items-center gap-2 text-sm opacity-72">
+                  <span>{dailyWord.phonetic}</span>
+                  <button
+                    type="button"
+                    onClick={playDailyWord}
+                    disabled={!dailyWord.audioFile}
+                    aria-label={`播放 ${dailyWord.word} 的发音`}
+                    title={dailyWord.audioFile ? "播放发音" : "发音可在后台生成"}
+                    className="rounded-full p-1 transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <SpeakerHigh size={20} weight="duotone" />
+                  </button>
+                </div>
+              </div>
+            )}
+            <Link
+              href={todayHref}
+              className="dashboard-action inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl px-7 py-4 text-lg font-black shadow-lg transition hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4"
+            >
+              {todayAction}
+              <ArrowRight size={22} weight="bold" />
+            </Link>
+          </div>
         </div>
       </section>
 
       {isWords ? (
         <>
-          <section className="rounded-[2rem] border border-black/6 bg-white/72 p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
+          <section className="theme-surface rounded-[2rem] border p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
             <div className="mb-6">
-              <div className="flex items-center gap-2 text-sm font-bold text-accent"><Sparkle size={18} weight="fill" /> 学习内容</div>
+              <div className="theme-section-eyebrow flex items-center gap-2 text-sm font-bold"><Sparkle size={18} weight="fill" /> 学习内容</div>
               <h2 className="mt-2 text-2xl font-black">选择今天要学的单词书</h2>
               <p className="mt-2 text-sm leading-6 text-black/48">点击即可切换；你的选择会同步影响上面的今日任务。</p>
             </div>
@@ -364,9 +413,9 @@ export default function Dashboard() {
           </div>
         </>
       ) : (
-        <section className="rounded-[2rem] border border-black/6 bg-white/72 p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
+        <section className="theme-surface rounded-[2rem] border p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
           <div className="mb-6">
-            <div className="flex items-center gap-2 text-sm font-bold text-accent"><Sparkle size={18} weight="fill" /> 学习内容</div>
+            <div className="theme-section-eyebrow flex items-center gap-2 text-sm font-bold"><Sparkle size={18} weight="fill" /> 学习内容</div>
             <h2 className="mt-2 text-2xl font-black">选择一种写作练习</h2>
             <p className="mt-2 text-sm leading-6 text-black/48">所有练习都会进入同一套批改、改写和能力评估流程。</p>
           </div>
