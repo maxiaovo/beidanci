@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SegmentWord from "@/components/SegmentWord";
 import FitWord from "@/components/FitWord";
+import ParentWritingPanel from "@/components/ParentWritingPanel";
 import { APPEARANCE_RANGES, DEFAULT_APPEARANCE, clampPx, type LearnAppearance } from "@/lib/appearance";
 
 interface UserRow {
@@ -1125,6 +1126,10 @@ export default function AdminPage() {
         </aside>
       )}
       </div>
+      )}
+
+      {tab === "manage" && selected?.role === "user" && (
+        <ParentWritingPanel childId={selected.id} childName={selected.username} />
       )}
 
       {/* 家长留言 */}

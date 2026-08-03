@@ -1,6 +1,7 @@
 // DeepSeek：把单元原始文本分析成结构化单词 JSON
 // 模型/Key/提示词优先取管理员在 Setting 表中的配置，默认 deepseek-v4-flash、关闭思考模式
 import { getAIConfig } from "./settings";
+import { requestDeepSeekText } from "./deepseek-client";
 
 export interface AnalyzedWord {
   text: string;
@@ -18,36 +19,8 @@ export interface AnalyzedWord {
 
 export async function analyzeUnitText(rawText: string): Promise<AnalyzedWord[]> {
   const cfg = await getAIConfig();
-  const url = `${cfg.baseUrl}/chat/completions`;
-  const body = {
-    model: cfg.model,
-    messages: [{ role: "user", content: cfg.prompt.replace("%s", rawText) }],
-    temperature: 0.2,
-    stream: false,
-    // 思考模式：默认关闭（DeepSeek v4 系列支持 thinking 参数）
-    ...(cfg.thinking ? {} : { thinking: { type: "disabled" } }),
-  };
-
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`DeepSeek HTTP ${res.status}: ${await res.text()}`);
-      const data = await res.json();
-      const content: string = data.choices?.[0]?.message?.content ?? "";
-      return parseWordsJson(content);
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
+  const content = await requestDeepSeekText([{ role: "user", content: cfg.prompt.replace("%s", rawText) }], 0.2);
+  return parseWordsJson(content);
 }
 
 function parseWordsJson(content: string): AnalyzedWord[] {

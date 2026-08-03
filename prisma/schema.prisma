@@ -12,29 +12,144 @@ model User {
   username          String   @unique
   passwordHash      String
   role              String   @default("user") // admin | user | parent
-  avatarUrl         String?  // 头像文件名，位于 data/avatars/
-  parentId          String?  // 孩子的家长（仅 role=user 使用）
+  avatarUrl         String? // 头像文件名，位于 data/avatars/
+  parentId          String? // 孩子的家长（仅 role=user 使用）
   parent            User?    @relation("ParentChild", fields: [parentId], references: [id], onDelete: SetNull)
   children          User[]   @relation("ParentChild")
   dailyNewTarget    Int      @default(20)
   dailyReviewTarget Int      @default(100)
   defaultCheckMode  String   @default("spell") // spell | choice
-  themePreset       String?  // 主题预设 id：purple | green | blue | warm | dark | custom
-  themeCustom       String?  // JSON：{background, foreground, accent, accent2}
-  highlightColor    String?  // 学习页高亮颜色（hex）
+  themePreset       String? // 主题预设 id：purple | green | blue | warm | dark | custom
+  themeCustom       String? // JSON：{background, foreground, accent, accent2}
+  highlightColor    String? // 学习页高亮颜色（hex）
   wordSize          String   @default("big") // 学习页单词字号：big | bigger | biggest
   segmentSize       String   @default("big") // 词根词缀字号
   sentenceSize      String   @default("big") // 例句字号
   sentenceCnSize    String   @default("big") // 例句中文字号
   createdAt         DateTime @default(now())
 
-  books       Book[]
-  progresses  WordProgress[]
-  logs        StudyLog[]
-  assignments BookAssignment[]
-  reviewSkips ReviewSkip[]
-  messages    Message[]
-  bookPlans   BookPlan[]
+  books              Book[]
+  progresses         WordProgress[]
+  logs               StudyLog[]
+  assignments        BookAssignment[]
+  reviewSkips        ReviewSkip[]
+  messages           Message[]
+  bookPlans          BookPlan[]
+  writingProfile     WritingProfile?
+  writingSessions    WritingSession[]
+  writingAttempts    WritingAttempt[]
+  writingMemoryItems WritingMemoryItem[]
+}
+
+// 写作能力画像：结构化背景、目标与持续更新的能力证据都保存为 JSON 字符串。
+model WritingProfile {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  declaredContext  String    @default("{}")
+  goals            String    @default("{}")
+  abilityBand      String    @default("")
+  abilitySummary   String    @default("")
+  dimensions       String    @default("{}")
+  strengths        String    @default("[]")
+  weaknesses       String    @default("[]")
+  evidence         String    @default("[]")
+  assessmentStatus String    @default("pending") // pending | provisional | assessed
+  completedTasks   Int       @default(0)
+  lastAssessedAt   DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model WritingSession {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String // diagnostic | practice | review
+  mode        String // topic | generated | free | translation | imitation | review
+  title       String           @default("")
+  topic       String           @default("")
+  genre       String           @default("")
+  target      String           @default("{}")
+  status      String           @default("active") // active | completed
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  completedAt DateTime?
+  messages    WritingMessage[]
+  tasks       WritingTask[]
+
+  @@index([userId, status, updatedAt])
+}
+
+model WritingMessage {
+  id        String         @id @default(cuid())
+  sessionId String
+  session   WritingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String // user | assistant
+  content   String
+  createdAt DateTime       @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+model WritingTask {
+  id           String           @id @default(cuid())
+  sessionId    String
+  session      WritingSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  orderIndex   Int
+  type         String // sentence | paragraph | article | translation | imitation | correction
+  prompt       String           @default("{}")
+  focus        String           @default("[]")
+  status       String           @default("active") // active | passed
+  hintLevel    Int              @default(0)
+  failedRounds Int              @default(0)
+  createdAt    DateTime         @default(now())
+  completedAt  DateTime?
+  attempts     WritingAttempt[]
+
+  @@unique([sessionId, orderIndex])
+}
+
+model WritingAttempt {
+  id              String              @id @default(cuid())
+  taskId          String
+  task            WritingTask         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientRequestId String              @unique
+  version         Int
+  text            String
+  feedback        String              @default("{}")
+  passed          Boolean             @default(false)
+  usedHint        Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  memoryItems     WritingMemoryItem[]
+
+  @@unique([taskId, version])
+  @@index([userId, createdAt])
+}
+
+model WritingMemoryItem {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceAttemptId String
+  sourceAttempt   WritingAttempt @relation(fields: [sourceAttemptId], references: [id], onDelete: Cascade)
+  category        String
+  skillCode       String
+  summary         String
+  explanation     String         @default("")
+  exampleBefore   String         @default("")
+  exampleAfter    String         @default("")
+  stage           Int            @default(0)
+  reps            Int            @default(0)
+  lapses          Int            @default(0)
+  nextReviewAt    DateTime
+  status          String         @default("active") // active | mastered
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([userId, status, nextReviewAt])
 }
 
 // 学习计划：每本书的每日新词量（按词数或单元分数）
@@ -69,7 +184,7 @@ model Message {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   text         String
   trigger      String   @default("start") // start | minutes | word
-  triggerValue Int?     // minutes=学习N分钟后；word=学到第N个词（1 起）
+  triggerValue Int? // minutes=学习N分钟后；word=学到第N个词（1 起）
   validUntil   DateTime // 有效期截止；active = now <= validUntil
   createdAt    DateTime @default(now())
 }
@@ -145,19 +260,19 @@ model Word {
 }
 
 model WordProgress {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   userId       String
-  user         User      @relation(fields: [userId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
   wordId       String
-  word         Word      @relation(fields: [wordId], references: [id], onDelete: Cascade)
-  stage        Int       @default(0)
+  word         Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  stage        Int      @default(0)
   nextReviewAt DateTime
-  lastResult   String    @default("") // correct | wrong | giveup
-  spellPassed  Boolean   @default(false) // 强检查：本轮拼写检查已通过
-  choicePassed Boolean   @default(false) // 强检查：本轮选择检查已通过
-  reps         Int       @default(0)
-  lapses       Int       @default(0)
-  updatedAt    DateTime  @updatedAt
+  lastResult   String   @default("") // correct | wrong | giveup
+  spellPassed  Boolean  @default(false) // 强检查：本轮拼写检查已通过
+  choicePassed Boolean  @default(false) // 强检查：本轮选择检查已通过
+  reps         Int      @default(0)
+  lapses       Int      @default(0)
+  updatedAt    DateTime @updatedAt
 
   @@unique([userId, wordId])
 }

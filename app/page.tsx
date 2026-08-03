@@ -38,6 +38,12 @@ interface SessionStats {
   };
 }
 
+interface WritingOverview {
+  profile: { assessmentStatus: string; abilitySummary: string } | null;
+  review: { required: boolean; todayCount: number };
+  activeSession: { id: string; title: string } | null;
+}
+
 interface PlanInfo {
   id: string;
   bookId: string;
@@ -86,6 +92,7 @@ export default function Dashboard() {
   const [savingPlans, setSavingPlans] = useState(false);
   const [plansSaved, setPlansSaved] = useState(false);
   const [selectedBook, setSelectedBook] = useState<string>(AUTO);
+  const [writing, setWriting] = useState<WritingOverview | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -98,7 +105,8 @@ export default function Dashboard() {
       fetch("/api/books").then((r) => (r.status === 401 ? null : r.json())),
       fetch("/api/session").then((r) => (r.status === 401 ? null : r.json())),
       fetch("/api/plans").then((r) => (r.status === 401 ? null : r.json())),
-    ]).then(([b, s, p]) => {
+      fetch("/api/writing/overview").then((r) => (r.ok ? r.json() : null)),
+    ]).then(([b, s, p, w]) => {
       if (!b || !s) {
         router.push("/login");
         return;
@@ -106,6 +114,7 @@ export default function Dashboard() {
       setBooks(b.books);
       setSession(s);
       if (p?.plans) setPlanSettings(settingsFromPlans(p.plans));
+      if (w) setWriting(w);
       setLoaded(true);
     });
     // 登录后落地页：展示"开始时"触发的家长留言
@@ -225,6 +234,30 @@ export default function Dashboard() {
           </Link>
         </div>
       </section>
+
+      <Link
+        href="/writing"
+        className="group grid gap-5 overflow-hidden rounded-[2rem] border border-accent/20 bg-gradient-to-br from-white via-white to-accent/10 p-6 shadow-[0_16px_45px_rgba(58,46,92,0.08)] transition hover:-translate-y-1 hover:shadow-[0_24px_55px_rgba(58,46,92,0.14)] sm:grid-cols-[1fr_auto] sm:items-center sm:p-8"
+      >
+        <div>
+          <div className="text-sm font-bold tracking-[0.16em] text-accent uppercase">Writing · 写作训练</div>
+          <h2 className="mt-2 text-2xl font-black sm:text-3xl">
+            {!writing?.profile || writing.profile.assessmentStatus === "pending"
+              ? "从几个单句开始，摸清你的表达水平"
+              : writing.review.required
+                ? `先攻下今天的 ${writing.review.todayCount} 个写作错点`
+                : writing.activeSession
+                  ? `继续：${writing.activeSession.title}`
+                  : "把今天真正想说的话写出来"}
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-black/48 sm:text-base">
+            {writing?.profile?.abilitySummary || "从日常表达、中文转英文和示范仿写开始；每次批改后必须亲手改写过关。"}
+          </p>
+        </div>
+        <span className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-6 font-black text-white transition group-hover:bg-accent">
+          {!writing?.profile ? "开始写作摸底" : writing.review.required ? "开始复练" : writing.activeSession ? "继续写作" : "开始新练习"} →
+        </span>
+      </Link>
 
       <section className="rounded-[2rem] border border-black/6 bg-white/72 p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
         <div className="mb-6 flex items-start justify-between gap-6">

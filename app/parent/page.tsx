@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import ParentWritingPanel from "@/components/ParentWritingPanel";
 
 interface ChildRow {
   id: string;
@@ -294,6 +295,8 @@ export default function ParentPage() {
           </aside>
         )}
       </div>
+
+      {selected && <ParentWritingPanel childId={selected.id} childName={selected.username} />}
 
       {/* 给孩子留言 */}
       {selected && (
