@@ -53,7 +53,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <Nav />
-        <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-0">{children}</main>
+        <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
       </body>
     </html>
   );

@@ -3,6 +3,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import {
+  ArrowRight,
+  BookOpen,
+  ChatText,
+  Copy,
+  GearSix,
+  ListBullets,
+  PencilLine,
+  Plus,
+  Sparkle,
+  Translate,
+  X,
+} from "@phosphor-icons/react";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
 import BookShelf from "@/components/BookShelf";
 
@@ -61,6 +74,8 @@ interface PlanSetting {
   fractionDen: number;
 }
 
+type LearningModule = "words" | "writing";
+
 // 轮盘里"系统自动安排"的固定选项 id
 const AUTO = "auto";
 
@@ -93,6 +108,7 @@ export default function Dashboard() {
   const [plansSaved, setPlansSaved] = useState(false);
   const [selectedBook, setSelectedBook] = useState<string>(AUTO);
   const [writing, setWriting] = useState<WritingOverview | null>(null);
+  const [learningModule, setLearningModule] = useState<LearningModule>("words");
   const router = useRouter();
 
   useEffect(() => {
@@ -115,6 +131,9 @@ export default function Dashboard() {
       setSession(s);
       if (p?.plans) setPlanSettings(settingsFromPlans(p.plans));
       if (w) setWriting(w);
+      if (new URLSearchParams(window.location.search).get("plan") === "1") {
+        setShowPlanSettings(true);
+      }
       setLoaded(true);
     });
     // 登录后落地页：展示"开始时"触发的家长留言
@@ -203,113 +222,204 @@ export default function Dashboard() {
     })),
   ];
 
+  const writingNeedsAssessment = !writing?.profile || writing.profile.assessmentStatus === "pending";
+  const writingTitle = writingNeedsAssessment
+    ? "先用几个单句，摸清你的表达水平"
+    : writing.review.required
+      ? `复练今天的 ${writing.review.todayCount} 个写作错点`
+      : writing.activeSession
+        ? `继续：${writing.activeSession.title}`
+        : "把今天真正想说的话写出来";
+  const writingDescription = writing?.profile?.abilitySummary
+    || "系统会根据你的表达水平安排题目，并在每次批改后要求你亲手改写过关。";
+  const writingAction = writingNeedsAssessment
+    ? "开始写作摸底"
+    : writing.review.required
+      ? "开始复练"
+      : writing.activeSession
+        ? "继续写作"
+        : "选择练习";
+
+  const isWords = learningModule === "words";
+  const todayTitle = isWords
+    ? due > 0
+      ? `先完成 ${due} 个到期复习`
+      : "开始今天的新词学习"
+    : writingTitle;
+  const todayDescription = isWords
+    ? due > 0
+      ? "先用主动回忆巩固到期词；完成后，系统会自动带你进入今天的新词学习。"
+      : `已选择「${selectedName ?? "智能安排"}」；今天会按计划安排 ${session?.stats.dailyNewTarget ?? 0} 个新词。`
+    : writingDescription;
+  const todayHref = isWords ? (due > 0 ? "/check?mode=review" : learnHref) : "/writing";
+  const todayAction = isWords ? (due > 0 ? "开始今日复习" : "开始背单词") : writingAction;
+
   return (
-    <div className="page-shell flex flex-col gap-8">
+    <div className="page-shell flex flex-col gap-6 sm:gap-8">
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
-      <section className="relative overflow-hidden rounded-[2rem] bg-foreground px-6 py-8 text-white shadow-[0_24px_60px_rgba(58,46,92,0.2)] sm:px-8 lg:px-10 lg:py-10">
-        <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-accent/35 blur-3xl" />
-        <div className="relative grid items-end gap-8 lg:grid-cols-[1fr_auto]">
+      <section aria-label="学习模块" className="-mx-1 overflow-x-auto px-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-max gap-3 sm:gap-4" role="tablist" aria-label="选择学习内容">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isWords}
+            onClick={() => setLearningModule("words")}
+            className={`flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 px-5 text-left transition sm:min-h-28 sm:w-52 sm:px-7 ${isWords ? "border-foreground bg-white shadow-[0_14px_32px_rgba(58,46,92,0.14)]" : "border-transparent bg-white/68 text-foreground/62 hover:bg-white"}`}
+          >
+            <BookOpen size={30} weight={isWords ? "fill" : "duotone"} />
+            <span>
+              <strong className="block text-xl font-black sm:text-2xl">单词</strong>
+              <span className="mt-1 block text-xs opacity-55">记忆与复习</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!isWords}
+            onClick={() => setLearningModule("writing")}
+            className={`flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 px-5 text-left transition sm:min-h-28 sm:w-52 sm:px-7 ${!isWords ? "border-foreground bg-white shadow-[0_14px_32px_rgba(58,46,92,0.14)]" : "border-transparent bg-white/68 text-foreground/62 hover:bg-white"}`}
+          >
+            <PencilLine size={30} weight={!isWords ? "fill" : "duotone"} />
+            <span>
+              <strong className="block text-xl font-black sm:text-2xl">写作</strong>
+              <span className="mt-1 block text-xs opacity-55">表达与改写</span>
+            </span>
+          </button>
+          <div className="flex min-h-24 w-40 items-center gap-3 rounded-3xl border-2 border-dashed border-black/10 bg-white/35 px-5 text-left text-foreground/35 sm:min-h-28 sm:w-52 sm:px-7">
+            <Plus size={28} weight="bold" />
+            <span>
+              <strong className="block text-lg font-black sm:text-xl">更多学习</strong>
+              <span className="mt-1 block text-xs">敬请期待</span>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="relative overflow-hidden rounded-[2rem] bg-foreground px-6 py-7 text-white shadow-[0_24px_60px_rgba(58,46,92,0.2)] sm:px-8 sm:py-9 lg:px-10">
+        <div className="relative mb-7 flex items-start justify-between gap-4">
           <div>
-            <div className="mb-3 text-sm font-bold tracking-[0.18em] text-white/55 uppercase">Up next · 今日下一步</div>
-            <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
-              {due > 0 ? `先完成 ${due} 个到期复习` : "开始今天的新词学习"}
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-white/68 lg:text-lg">
-              {due > 0
-                ? "到期词先用主动回忆巩固；完成后，系统会自动带你进入新词学习。"
-                : `已选择「${selectedName ?? "智能安排"}」；今天会按计划安排 ${session?.stats.dailyNewTarget ?? 0} 个新词。`}
-            </p>
-            <div className="mt-6 flex flex-wrap gap-6 text-sm text-white/65">
-              <span><strong className="text-xl text-white">{session?.stats.reviewsDoneToday ?? 0}</strong> 今日复习</span>
-              <span><strong className="text-xl text-white">{session?.stats.learnedToday ?? 0}</strong> 今日新词</span>
-              <span><strong className="text-xl text-white">{learnedWords}</strong> 累计学习</span>
+            <div className="text-xs font-bold tracking-[0.18em] text-white/55 uppercase">Up next</div>
+            <h1 className="mt-1 text-2xl font-black sm:text-3xl">今日下一步</h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPlanSettings(true)}
+            aria-label="设置每日任务"
+            title="设置每日任务"
+            className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-3.5 text-sm font-bold text-white transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25 sm:px-4"
+          >
+            <GearSix size={21} weight="bold" />
+            <span className="hidden sm:inline">设置每日任务</span>
+          </button>
+        </div>
+        <div className="grid items-end gap-7 lg:grid-cols-[1fr_auto]">
+          <div>
+            <h2 className="max-w-4xl text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">{todayTitle}</h2>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-white/70 lg:text-lg">{todayDescription}</p>
+            <div className="mt-6 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/65">
+              {isWords ? (
+                <>
+                  <span><strong className="mr-1.5 text-xl text-white">{session?.stats.reviewsDoneToday ?? 0}</strong>今日复习</span>
+                  <span><strong className="mr-1.5 text-xl text-white">{session?.stats.learnedToday ?? 0}</strong>今日新词</span>
+                  <span><strong className="mr-1.5 text-xl text-white">{learnedWords}</strong>累计学习</span>
+                </>
+              ) : (
+                <>
+                  <span><strong className="mr-1.5 text-xl text-white">{writing?.review.todayCount ?? 0}</strong>待复练错点</span>
+                  <span><strong className="mr-1.5 text-xl text-white">{writing?.activeSession ? 1 : 0}</strong>进行中的练习</span>
+                  <span><strong className="mr-1.5 text-xl text-white">{writingNeedsAssessment ? "待完成" : "已完成"}</strong>系统评估</span>
+                </>
+              )}
             </div>
           </div>
           <Link
-            href={due > 0 ? "/check?mode=review" : learnHref}
-            className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-white px-8 py-4 text-lg font-black text-foreground shadow-lg transition hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/35"
+            href={todayHref}
+            className="inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-white px-7 py-4 text-lg font-black text-foreground shadow-lg transition hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/35"
           >
-            {due > 0 ? "开始今日复习" : "开始背单词"}
-            <span className="ml-3" aria-hidden="true">→</span>
+            {todayAction}
+            <ArrowRight size={22} weight="bold" />
           </Link>
         </div>
       </section>
 
-      <Link
-        href="/writing"
-        className="group grid gap-5 overflow-hidden rounded-[2rem] border border-accent/20 bg-gradient-to-br from-white via-white to-accent/10 p-6 shadow-[0_16px_45px_rgba(58,46,92,0.08)] transition hover:-translate-y-1 hover:shadow-[0_24px_55px_rgba(58,46,92,0.14)] sm:grid-cols-[1fr_auto] sm:items-center sm:p-8"
-      >
-        <div>
-          <div className="text-sm font-bold tracking-[0.16em] text-accent uppercase">Writing · 写作训练</div>
-          <h2 className="mt-2 text-2xl font-black sm:text-3xl">
-            {!writing?.profile || writing.profile.assessmentStatus === "pending"
-              ? "从几个单句开始，摸清你的表达水平"
-              : writing.review.required
-                ? `先攻下今天的 ${writing.review.todayCount} 个写作错点`
-                : writing.activeSession
-                  ? `继续：${writing.activeSession.title}`
-                  : "把今天真正想说的话写出来"}
-          </h2>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-black/48 sm:text-base">
-            {writing?.profile?.abilitySummary || "从日常表达、中文转英文和示范仿写开始；每次批改后必须亲手改写过关。"}
-          </p>
-        </div>
-        <span className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-6 font-black text-white transition group-hover:bg-accent">
-          {!writing?.profile ? "开始写作摸底" : writing.review.required ? "开始复练" : writing.activeSession ? "继续写作" : "开始新练习"} →
-        </span>
-      </Link>
-
-      <section className="rounded-[2rem] border border-black/6 bg-white/72 p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
-        <div className="mb-6 flex items-start justify-between gap-6">
-          <div>
-            <h2 className="text-2xl font-black">选择单词书</h2>
-            <p className="mt-2 text-sm leading-6 text-black/48">
-              所有可用单词书都在这里。点击选中；鼠标经过可以快速查看每本书的学习进度。
-            </p>
+      {isWords ? (
+        <>
+          <section className="rounded-[2rem] border border-black/6 bg-white/72 p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
+            <div className="mb-6">
+              <div className="flex items-center gap-2 text-sm font-bold text-accent"><Sparkle size={18} weight="fill" /> 学习内容</div>
+              <h2 className="mt-2 text-2xl font-black">选择今天要学的单词书</h2>
+              <p className="mt-2 text-sm leading-6 text-black/48">点击即可切换；你的选择会同步影响上面的今日任务。</p>
+            </div>
+            {readyBooks.length === 0 ? (
+              <div className="py-10 text-center text-black/40">
+                还没有可用的单词书，<Link href="/import" className="font-bold text-accent underline">去导入一本</Link>吧
+              </div>
+            ) : (
+              <BookShelf items={shelfItems} value={selectedBook} onChange={setSelectedBook} />
+            )}
+          </section>
+          <div className="flex flex-col items-start justify-between gap-3 border-t border-black/8 px-1 pt-5 text-sm text-black/45 sm:flex-row sm:items-center">
+            <span>想额外加练？自由练习不会改变今日主任务。</span>
+            <Link href="/check" className="shrink-0 font-bold text-foreground underline decoration-black/20 underline-offset-4 hover:text-accent">进入自由练习</Link>
           </div>
-          <button
-            onClick={() => setShowPlanSettings(true)}
-            title="每日任务设置"
-            className="shrink-0 rounded-xl border border-black/10 px-4 py-2 text-sm font-bold text-black/55 transition hover:border-accent/40 hover:bg-accent/8 hover:text-foreground"
-          >
-            调整每日计划
-          </button>
-        </div>
-        {readyBooks.length === 0 ? (
-          <div className="py-10 text-center text-black/40">
-            还没有可用的单词书，<Link href="/import" className="text-blue-500 underline">去导入一本</Link>吧
+        </>
+      ) : (
+        <section className="rounded-[2rem] border border-black/6 bg-white/72 p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
+          <div className="mb-6">
+            <div className="flex items-center gap-2 text-sm font-bold text-accent"><Sparkle size={18} weight="fill" /> 学习内容</div>
+            <h2 className="mt-2 text-2xl font-black">选择一种写作练习</h2>
+            <p className="mt-2 text-sm leading-6 text-black/48">所有练习都会进入同一套批改、改写和能力评估流程。</p>
           </div>
-        ) : (
-          <BookShelf items={shelfItems} value={selectedBook} onChange={setSelectedBook} />
-        )}
-      </section>
-
-      <div className="flex items-center justify-between gap-4 border-t border-black/8 px-1 pt-5 text-sm text-black/45">
-        <span>想额外加练？自由练习不会改变今日主任务。</span>
-        <Link href="/check" className="shrink-0 font-bold text-foreground underline decoration-black/20 underline-offset-4 hover:text-accent">
-          进入自由练习
-        </Link>
-      </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {[
+              { title: "我有题目", desc: "带着自己的题目或想写的内容开始。", icon: ListBullets },
+              { title: "帮我出题", desc: "系统按你的水平生成不同方向的题目。", icon: Sparkle },
+              { title: "自由写一句", desc: "把此刻真正想说的话直接写成英文。", icon: ChatText },
+              { title: "从中文开始", desc: "先理清中文想法，再把它写成英文。", icon: Translate },
+              { title: "示范仿写", desc: "记住地道句子，再换一个场景重写。", icon: Copy },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.title} href="/writing" className="group min-h-44 rounded-3xl border border-black/7 bg-white p-5 text-left shadow-[0_10px_28px_rgba(58,46,92,0.07)] transition hover:-translate-y-1 hover:border-accent/40 hover:shadow-[0_18px_36px_rgba(58,46,92,0.12)]">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/12 text-accent"><Icon size={24} weight="duotone" /></span>
+                  <h3 className="mt-5 text-xl font-black">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-black/48">{item.desc}</p>
+                  <span className="mt-4 flex items-center gap-1.5 text-sm font-bold text-accent opacity-0 transition group-hover:opacity-100">开始练习 <ArrowRight size={16} weight="bold" /></span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* 每日任务设置（齿轮弹窗） */}
       {showPlanSettings && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
           onClick={() => setShowPlanSettings(false)}
         >
           <div
-            className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="daily-plan-title"
+            className="max-h-[84vh] w-full max-w-xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl sm:p-7"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-lg">每日任务设置</h2>
+            <div className="mb-2 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-bold text-accent">学习安排</div>
+                <h2 id="daily-plan-title" className="mt-1 text-2xl font-black">每日任务设置</h2>
+              </div>
               <button
+                type="button"
                 onClick={() => setShowPlanSettings(false)}
-                className="text-black/40 hover:text-black/70 text-xl leading-none"
+                aria-label="关闭每日任务设置"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/5 text-black/45 transition hover:bg-black/10 hover:text-black/70"
               >
-                ✕
+                <X size={20} weight="bold" />
               </button>
             </div>
+            <p className="mb-5 text-sm leading-6 text-black/48">调整每本单词书每天的学习量。写作任务会根据系统评估与错点复练自动安排。</p>
             {readyBooks.length === 0 ? (
               <div className="text-black/40 text-sm">还没有可用的单词书</div>
             ) : (
@@ -319,12 +429,12 @@ export default function Dashboard() {
                   const update = (patch: Partial<PlanSetting>) =>
                     setPlanSettings((prev) => ({ ...prev, [b.id]: { ...s, ...patch } }));
                   return (
-                    <div key={b.id} className="flex items-center gap-3 py-3 flex-wrap">
+                    <div key={b.id} className="flex flex-wrap items-center gap-3 py-4">
                       <div className="flex-1 min-w-0 font-medium truncate">{b.name}</div>
                       <select
                         value={s.mode}
                         onChange={(e) => update({ mode: e.target.value as PlanSetting["mode"] })}
-                        className="border border-black/15 rounded-lg px-2 py-1.5 text-sm bg-white"
+                        className="rounded-xl border border-black/15 bg-white px-3 py-2 text-sm"
                       >
                         <option value="none">不安排</option>
                         <option value="words">每天 N 词</option>
@@ -342,7 +452,8 @@ export default function Dashboard() {
                             if (s.mode === "words") update({ wordsPerDay: clamp(n, 1, 200) });
                             else update({ fractionDen: clamp(n, 2, 10) });
                           }}
-                          className="border border-black/15 rounded-lg px-2 py-1.5 text-sm w-20"
+                          aria-label={`${b.name}每日数量`}
+                          className="w-20 rounded-xl border border-black/15 px-3 py-2 text-sm"
                         />
                       )}
                     </div>
@@ -350,11 +461,12 @@ export default function Dashboard() {
                 })}
               </div>
             )}
-            <div className="flex items-center gap-3 mt-4">
+            <div className="mt-5 flex items-center gap-3">
               <button
+                type="button"
                 onClick={savePlans}
                 disabled={savingPlans}
-                className="bg-blue-500 text-white rounded-xl px-6 py-2.5 font-bold hover:opacity-90 disabled:opacity-50"
+                className="rounded-xl bg-foreground px-6 py-3 font-bold text-white transition hover:bg-accent disabled:opacity-50"
               >
                 {savingPlans ? "保存中…" : "保存"}
               </button>

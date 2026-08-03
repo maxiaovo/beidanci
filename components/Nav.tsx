@@ -3,6 +3,15 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  BookOpen,
+  Books,
+  CheckCircle,
+  House,
+  PencilLine,
+  Student,
+  UserCircle,
+} from "@phosphor-icons/react";
 
 interface Me {
   username: string;
@@ -16,17 +25,17 @@ interface SiteCfg {
 }
 
 const TABS = [
-  { href: "/", icon: "🏠", label: "首页" },
-  { href: "/words", icon: "📚", label: "单词书" },
-  { href: "/learn", icon: "✏️", label: "背单词" },
-  { href: "/check", icon: "✅", label: "检查" },
-  { href: "/settings", icon: "👤", label: "我的" },
+  { href: "/", icon: House, label: "首页" },
+  { href: "/words", icon: Books, label: "单词书" },
+  { href: "/learn", icon: BookOpen, label: "背单词" },
+  { href: "/check", icon: CheckCircle, label: "检查" },
+  { href: "/me", icon: UserCircle, label: "我的" },
 ];
 
 // 家长不参与学习，只看孩子
 const PARENT_TABS = [
-  { href: "/parent", icon: "👨‍👧", label: "孩子" },
-  { href: "/settings", icon: "👤", label: "我的" },
+  { href: "/parent", icon: Student, label: "孩子" },
+  { href: "/me", icon: UserCircle, label: "我的" },
 ];
 
 export default function Nav() {
@@ -73,32 +82,33 @@ export default function Nav() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src="/api/site-icon" alt="" className="w-6 h-6 rounded object-contain" />
           ) : (
-            <span>📖</span>
+            <BookOpen size={24} weight="duotone" aria-hidden="true" />
           )}
           {site.siteTitle}
         </Link>
 
         {/* 桌面端导航（手机端用底部 Tab 栏） */}
         {me && me.role === "parent" && (
-          <nav className="hidden sm:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
+          <nav className="hidden lg:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
             <Link href="/parent" className={linkCls("/parent")}>孩子</Link>
-            <Link href="/settings" className={linkCls("/settings")}>设置</Link>
+            <Link href="/me" className={linkCls("/me")}>我的</Link>
           </nav>
         )}
         {me && me.role !== "parent" && (
-          <nav className="hidden sm:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
+          <nav className="hidden lg:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
             <Link href="/" className={linkCls("/")}>首页</Link>
+            <Link href="/writing" className={linkCls("/writing")}><span className="inline-flex items-center gap-1"><PencilLine size={15} />写作</span></Link>
             <Link href="/words" className={linkCls("/words")}>单词书</Link>
             <Link href="/learn" className={linkCls("/learn")}>背单词</Link>
             <Link href="/check" className={linkCls("/check")}>检查</Link>
             <Link href="/import" className={linkCls("/import")}>导入</Link>
             {me.role === "admin" && <Link href="/admin" className={linkCls("/admin")}>管理</Link>}
-            <Link href="/settings" className={linkCls("/settings")}>设置</Link>
+            <Link href="/me" className={linkCls("/me")}>我的</Link>
           </nav>
         )}
 
         {/* 桌面端：头像 + 用户名 + 退出 */}
-        <div className="hidden sm:flex items-center gap-3 text-sm shrink-0">
+        <div className="hidden lg:flex items-center gap-3 text-sm shrink-0">
           {me ? (
             <>
               {me.avatarUrl ? (
@@ -124,9 +134,9 @@ export default function Nav() {
         </div>
 
         {/* 手机端：右侧头像（未登录显示登录入口） */}
-        <div className="sm:hidden shrink-0">
+        <div className="shrink-0 lg:hidden">
           {me ? (
-            <Link href="/settings" aria-label="我的">
+            <Link href="/me" aria-label="我的">
               {me.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -149,22 +159,24 @@ export default function Nav() {
       {/* 手机端底部 Tab 栏 */}
       {me && (
         <nav
-          className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur border-t border-black/5"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-black/5 bg-white/90 backdrop-blur lg:hidden"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
           <div className="flex">
-            {(me.role === "parent" ? PARENT_TABS : TABS).map((t) => (
-              <Link
-                key={t.href}
-                href={t.href}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
-                  isActive(t.href) ? "text-foreground font-bold" : "text-foreground/45"
-                }`}
-              >
-                <span className="text-lg leading-none">{t.icon}</span>
-                {t.label}
-              </Link>
-            ))}
+            {(me.role === "parent" ? PARENT_TABS : TABS).map((t) => {
+              const Icon = t.icon;
+              const active = isActive(t.href);
+              return (
+                <Link
+                  key={t.href}
+                  href={t.href}
+                  className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${active ? "font-bold text-foreground" : "text-foreground/45"}`}
+                >
+                  <Icon size={20} weight={active ? "fill" : "regular"} aria-hidden="true" />
+                  {t.label}
+                </Link>
+              );
+            })}
           </div>
         </nav>
       )}
