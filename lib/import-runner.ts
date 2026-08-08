@@ -6,6 +6,7 @@ import path from "path";
 import { prisma } from "./db";
 import { analyzeUnitText } from "./deepseek";
 import { AUDIO_DIR, synthesize } from "./tts";
+import { registerAudioVersion } from "./audio-versions";
 import type { RawUnit } from "./parsers";
 
 interface Job {
@@ -221,24 +222,38 @@ async function runImport(bookId: string, units: RawUnit[]) {
       if (isStopped(bookId)) throw new Stopped();
       const out: { voice?: string } = {};
       // 断点续传：已有记录且文件存在的条目跳过，只补缺失的
+      // 新生成的音频登记为版本（时间戳文件名）并设为当前；旧版本保留
+      const ts = Date.now();
       let audioWord = w.audioWord;
       if (!hasAudioFile(audioWord)) {
-        audioWord = await synthesize(w.text, `${w.id}_word.wav`, { out });
-        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音${voiceTag(out)}`, ok: !!audioWord });
+        const file = await synthesize(w.text, `${w.id}_word_${ts}.wav`, { out });
+        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 单词发音${voiceTag(out)}`, ok: !!file });
+        if (file) {
+          await registerAudioVersion(w.id, "word", file, out.voice || "");
+          audioWord = file;
+        }
         if (isStopped(bookId)) throw new Stopped();
       }
       done++;
       let audioEx1 = w.audioEx1;
       if (!hasAudioFile(audioEx1)) {
-        audioEx1 = await synthesize(w.example1, `${w.id}_ex1.wav`, { out });
-        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句1${voiceTag(out)}：${w.example1.slice(0, 60)}`, ok: !!audioEx1 });
+        const file = await synthesize(w.example1, `${w.id}_ex1_${ts}.wav`, { out });
+        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句1${voiceTag(out)}：${w.example1.slice(0, 60)}`, ok: !!file });
+        if (file) {
+          await registerAudioVersion(w.id, "ex1", file, out.voice || "");
+          audioEx1 = file;
+        }
         if (isStopped(bookId)) throw new Stopped();
       }
       done++;
       let audioEx2 = w.audioEx2;
       if (!hasAudioFile(audioEx2)) {
-        audioEx2 = await synthesize(w.example2, `${w.id}_ex2.wav`, { out });
-        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句2${voiceTag(out)}：${w.example2.slice(0, 60)}`, ok: !!audioEx2 });
+        const file = await synthesize(w.example2, `${w.id}_ex2_${ts}.wav`, { out });
+        logImportEvent({ kind: "audio", bookId, text: `${w.text} · 例句2${voiceTag(out)}：${w.example2.slice(0, 60)}`, ok: !!file });
+        if (file) {
+          await registerAudioVersion(w.id, "ex2", file, out.voice || "");
+          audioEx2 = file;
+        }
       }
       done++;
       await prisma.word.update({

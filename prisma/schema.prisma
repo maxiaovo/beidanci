@@ -290,6 +290,20 @@ model Word {
 
   progresses WordProgress[]
   logs       StudyLog[]
+  audios     WordAudio[]
+}
+
+// 音频版本：每次合成（导入/重新生成）追加一条，Word.audio* 指向当前启用的版本文件
+model WordAudio {
+  id        String   @id @default(cuid())
+  wordId    String
+  word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  kind      String // word | ex1 | ex2
+  file      String // 文件名，位于 data/audio/
+  voice     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([wordId, kind])
 }
 
 model WordProgress {

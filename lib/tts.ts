@@ -1,10 +1,10 @@
-// TTS 合成层：统一走千问（DashScope）TTS 原生接口（见 lib/openai-tts.ts）
+// TTS 合成层：统一走千问（DashScope）TTS 原生接口（见 lib/qwen-tts.ts）
 // 合成结果统一写入 data/audio/，返回文件名
 // opts.out.voice 回传本次实际使用的音色名（随机或指定）；opts.out.error 回传失败原因
 import fs from "fs";
 import path from "path";
 import { getTTSConfig, EN_TTS_VOICES, DEFAULT_TTS_INSTRUCTION } from "./settings";
-import { synthesizeSpeech } from "./openai-tts";
+import { synthesizeSpeech } from "./qwen-tts";
 
 export const AUDIO_DIR = path.join(process.cwd(), "data", "audio");
 

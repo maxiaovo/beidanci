@@ -4,9 +4,9 @@
 
 导入支持**断点续传**：导入失败或被停止后，在单词书页 / 导入页点「继续导入」即可从断点恢复——已入库的单元跳过 AI 分析，已生成的音频不重复合成，只补缺失部分。管理页「音频资源」可单条 ↻ 重新生成，也可一键「补齐全部缺失音频」。
 
-## TTS 语音合成（OpenAI 兼容接口）
+## TTS 语音合成（千问 Qwen3-TTS）
 
-TTS 走通用 **OpenAI 兼容接口**（`POST {baseUrl}/v1/audio/speech`），可接 OpenAI、火山引擎、阿里百炼等兼容服务。在「管理 → 设置 → TTS 语音设置」中配置 Base URL / Token / 模型 / 音色，可在线检测连接与试听；也可用环境变量 `TTS_BASE_URL`、`TTS_API_TOKEN`、`TTS_MODEL`、`TTS_VOICE` 配置（Setting 表优先于环境变量）。
+TTS 统一走**千问（DashScope）原生接口**（`POST {baseUrl}` → 响应 `output.audio.url` → 二次下载 WAV），默认模型 `qwen3-tts-flash`，英语音色池 Jennifer / Ryan / Katerina / Aiden 随机选用。在「管理 → 设置 → TTS 语音设置」中配置 Base URL / Token / 模型 / 音色 / 朗读指令，可在线检测连接与试听；也可用环境变量 `TTS_BASE_URL`、`TTS_API_TOKEN`、`TTS_MODEL`、`TTS_VOICE`、`TTS_INSTRUCTION` 配置（Setting 表优先于环境变量）。重新生成的音频按版本保留，可在「管理 → 音频资源」中切换 / 删除历史版本。
 
 ## 本地开发
 

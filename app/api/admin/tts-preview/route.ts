@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/session";
 import { getTTSConfig } from "@/lib/settings";
-import { synthesizeSpeech } from "@/lib/openai-tts";
+import { synthesizeSpeech } from "@/lib/qwen-tts";
 
 // 试听音色：按管理员面板当前（可未保存）的设置现场合成一小段样例，直接回传 WAV
 // body: { baseUrl?, apiKey?, model?, voice?, instruction?, kind?: "word"|"sentence" }

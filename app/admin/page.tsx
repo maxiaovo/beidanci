@@ -94,7 +94,26 @@ interface AudioWord {
   fileWord: boolean;
   fileEx1: boolean;
   fileEx2: boolean;
+  versionCount?: { word: number; ex1: number; ex2: number };
 }
+
+// 音频版本（管理页版本面板）
+interface AudioVersion {
+  id: string;
+  file: string;
+  voice: string;
+  createdAt: string;
+  active: boolean;
+}
+
+type AudioKind = "word" | "ex1" | "ex2";
+
+// kind → AudioWord 的当前文件字段 / 文件存在标志字段
+const KIND_FIELD = {
+  word: ["audioWord", "fileWord"],
+  ex1: ["audioEx1", "fileEx1"],
+  ex2: ["audioEx2", "fileEx2"],
+} as const;
 
 // 音频资源列表每页条数
 const AUDIO_PAGE_SIZE = 100;
@@ -169,7 +188,7 @@ export default function AdminPage() {
   const [aiMsg, setAiMsg] = useState("");
   const [tts, setTts] = useState<TTSSettings | null>(null);
   const [ttsMsg, setTtsMsg] = useState("");
-  // TTS 服务连接状态（OpenAI 兼容接口探测）
+  // TTS 服务连接状态（千问 DashScope 接口探测）
   const [ttsHealth, setTtsHealth] = useState<{ state: "idle" | "checking" | "ok" | "fail"; detail: string }>({
     state: "idle",
     detail: "",
@@ -190,6 +209,10 @@ export default function AdminPage() {
   const [approveMsg, setApproveMsg] = useState("");
   // 音频资源列表分页（筛选变化时重置到第 1 页）
   const [audioPage, setAudioPage] = useState(1);
+  // 音频版本面板：选中 (wordId, kind) 后展开历史版本列表
+  const [versionsPanel, setVersionsPanel] = useState<{ id: string; kind: AudioKind } | null>(null);
+  const [audioVersions, setAudioVersions] = useState<AudioVersion[] | null>(null);
+  const [versionsBusy, setVersionsBusy] = useState(false);
 
   const audioFiltered = (audioWords ?? []).filter((w) => {
     const q = audioFilter.trim().toLowerCase();
@@ -485,6 +508,7 @@ export default function AdminPage() {
   }
 
   // 重新生成某个单词的某条音频（可带临时指令 / 替代拼写），成功后更新列表中的该行
+  // 每次生成是新版本：旧版本保留，新版本自动设为当前
   async function regenAudio(
     w: AudioWord,
     kind: "word" | "ex1" | "ex2",
@@ -501,6 +525,7 @@ export default function AdminPage() {
       });
       const d = await r.json();
       if (r.ok) {
+        const regenerated = !((d.failed || []) as string[]).includes(kind);
         setAudioWords((list) =>
           (list ?? []).map((x) =>
             x.id === w.id
@@ -512,10 +537,16 @@ export default function AdminPage() {
                   fileWord: d.fileWord,
                   fileEx1: d.fileEx1,
                   fileEx2: d.fileEx2,
+                  versionCount: regenerated
+                    ? { word: 0, ex1: 0, ex2: 0, ...x.versionCount, [kind]: (x.versionCount?.[kind] ?? 0) + 1 }
+                    : x.versionCount,
                 }
               : x,
           ),
         );
+        if (regenerated && versionsPanel?.id === w.id && versionsPanel.kind === kind) {
+          await fetchVersions(w.id, kind);
+        }
         if (!d.ok) {
           const reasons = (d.reasons ?? {}) as Record<string, string>;
           const detail = ((d.failed || []) as string[])
@@ -528,6 +559,93 @@ export default function AdminPage() {
       }
     } finally {
       setRegenBusy((s) => ({ ...s, [key]: false }));
+    }
+  }
+
+  // 拉取某单词某类音频的版本列表（版本面板展开时 / 重新生成后刷新）
+  async function fetchVersions(wordId: string, kind: AudioKind) {
+    const r = await fetch(`/api/admin/audio/versions?wordId=${wordId}&kind=${kind}`);
+    const d = await r.json().catch(() => ({}));
+    setAudioVersions(r.ok ? d.versions : []);
+  }
+
+  // 展开 / 收起版本面板
+  async function toggleVersions(w: AudioWord, kind: AudioKind) {
+    if (versionsPanel?.id === w.id && versionsPanel.kind === kind) {
+      setVersionsPanel(null);
+      setAudioVersions(null);
+      return;
+    }
+    setVersionsPanel({ id: w.id, kind });
+    setAudioVersions(null);
+    await fetchVersions(w.id, kind);
+  }
+
+  // 把某个历史版本设为当前启用
+  async function activateVersion(w: AudioWord, v: AudioVersion) {
+    if (!versionsPanel) return;
+    const kind = versionsPanel.kind;
+    setVersionsBusy(true);
+    try {
+      const r = await fetch("/api/admin/audio/versions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId: v.id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        const [fileKey, flagKey] = KIND_FIELD[kind];
+        setAudioWords((list) =>
+          (list ?? []).map((x) =>
+            x.id === w.id ? { ...x, [fileKey]: d.active, [flagKey]: true } : x,
+          ),
+        );
+        setAudioVersions((vs) => (vs ?? []).map((x) => ({ ...x, active: x.id === v.id })));
+      } else {
+        alert(d.error || "操作失败");
+      }
+    } finally {
+      setVersionsBusy(false);
+    }
+  }
+
+  // 删除一个版本（含音频文件）；删当前版本时服务端自动切到剩余最新
+  async function removeVersion(w: AudioWord, v: AudioVersion) {
+    if (!versionsPanel) return;
+    const kind = versionsPanel.kind;
+    if (!confirm(`删除「${w.text}」的这个音频版本？文件将一并删除。`)) return;
+    setVersionsBusy(true);
+    try {
+      const r = await fetch("/api/admin/audio/versions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId: v.id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        const [fileKey, flagKey] = KIND_FIELD[kind];
+        setAudioVersions((vs) =>
+          (vs ?? []).filter((x) => x.id !== v.id).map((x) => ({ ...x, active: x.file === d.active })),
+        );
+        setAudioWords((list) =>
+          (list ?? []).map((x) =>
+            x.id === w.id
+              ? {
+                  ...x,
+                  [fileKey]: d.active,
+                  [flagKey]: d.active !== null,
+                  versionCount: x.versionCount
+                    ? { ...x.versionCount, [kind]: Math.max(0, x.versionCount[kind] - 1) }
+                    : x.versionCount,
+                }
+              : x,
+          ),
+        );
+      } else {
+        alert(d.error || "删除失败");
+      }
+    } finally {
+      setVersionsBusy(false);
     }
   }
 
@@ -1931,7 +2049,7 @@ export default function AdminPage() {
               共 {audioWords.length} 个单词
               {audioWords.filter((w) => !w.fileWord || !w.fileEx1 || !w.fileEx2).length > 0 &&
                 `，${audioWords.filter((w) => !w.fileWord || !w.fileEx1 || !w.fileEx2).length} 个存在缺失音频`}
-              ，点击 ▶ 试听，↻ 重新生成（按当前 TTS 设置与音标）
+              ，点击 ▶ 试听，↻ 重新生成（按当前 TTS 设置与音标），版本 查看/切换/删除历史版本
             </p>
             <div className="divide-y max-h-[32rem] overflow-y-auto">
               {audioPageItems.map((w) => (
@@ -1976,6 +2094,15 @@ export default function AdminPage() {
                           className="px-1.5 py-1 rounded text-xs hover:bg-black/10 disabled:opacity-40"
                         >
                           {regenBusy[`${w.id}_${kind}`] ? "…" : "↻"}
+                        </button>
+                        <button
+                          onClick={() => void toggleVersions(w, kind)}
+                          title={`${label}历史版本（试听 / 设为当前 / 删除）`}
+                          className={`px-1.5 py-1 rounded text-xs hover:bg-black/10 ${
+                            versionsPanel?.id === w.id && versionsPanel.kind === kind ? "bg-black/10" : ""
+                          }`}
+                        >
+                          版本{w.versionCount?.[kind] ? `(${w.versionCount[kind]})` : ""}
                         </button>
                       </div>
                     ))}
@@ -2024,6 +2151,54 @@ export default function AdminPage() {
                           取消
                         </button>
                       </div>
+                    </div>
+                  )}
+                  {versionsPanel?.id === w.id && (
+                    <div className="mb-2 ml-1 mr-1 rounded-xl bg-black/[.03] p-3 text-sm">
+                      <div className="text-xs text-black/50 mb-2">
+                        「{w.text}」
+                        {versionsPanel.kind === "word" ? "单词发音" : versionsPanel.kind === "ex1" ? "例句1" : "例句2"}
+                        的历史版本（重新生成自动设为当前，可回切 / 删除）
+                      </div>
+                      {!audioVersions ? (
+                        <p className="text-xs text-black/40">加载中…</p>
+                      ) : audioVersions.length === 0 ? (
+                        <p className="text-xs text-black/40">暂无版本记录</p>
+                      ) : (
+                        <div className="flex flex-col gap-1.5">
+                          {audioVersions.map((v) => (
+                            <div key={v.id} className="flex items-center gap-2 text-xs">
+                              <button
+                                onClick={() => playAudio(v.file)}
+                                title={v.file}
+                                className="px-2 py-1 rounded bg-black/5 hover:bg-black/10"
+                              >
+                                ▶
+                              </button>
+                              <span className="text-black/60 w-20 shrink-0">{v.voice || "未知音色"}</span>
+                              <span className="text-black/40">{new Date(v.createdAt).toLocaleString()}</span>
+                              {v.active ? (
+                                <span className="text-accent font-bold px-2">当前</span>
+                              ) : (
+                                <button
+                                  disabled={versionsBusy}
+                                  onClick={() => activateVersion(w, v)}
+                                  className="border rounded px-2 py-0.5 hover:bg-black/5 disabled:opacity-40"
+                                >
+                                  设为当前
+                                </button>
+                              )}
+                              <button
+                                disabled={versionsBusy}
+                                onClick={() => removeVersion(w, v)}
+                                className="border border-red-300 text-red-500 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-40"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   </Fragment>

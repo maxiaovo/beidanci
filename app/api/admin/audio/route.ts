@@ -4,6 +4,7 @@ import path from "path";
 import { requireAdmin } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { AUDIO_DIR, synthesize } from "@/lib/tts";
+import { registerAudioVersion } from "@/lib/audio-versions";
 
 // 管理员音频资源检查：列出全部单词的音频（含文件是否存在于 data/audio/）
 function fileExists(name: string | null | undefined) {
@@ -32,6 +33,11 @@ export async function GET() {
       unit: { select: { title: true, book: { select: { name: true } } } },
     },
   });
+  const counts = await prisma.wordAudio.groupBy({
+    by: ["wordId", "kind"],
+    _count: { _all: true },
+  });
+  const countOf = new Map(counts.map((c) => [`${c.wordId}_${c.kind}`, c._count._all]));
   return NextResponse.json({
     words: words.map((w) => ({
       id: w.id,
@@ -45,12 +51,18 @@ export async function GET() {
       fileWord: fileExists(w.audioWord),
       fileEx1: fileExists(w.audioEx1),
       fileEx2: fileExists(w.audioEx2),
+      versionCount: {
+        word: countOf.get(`${w.id}_word`) ?? 0,
+        ex1: countOf.get(`${w.id}_ex1`) ?? 0,
+        ex2: countOf.get(`${w.id}_ex2`) ?? 0,
+      },
     })),
   });
 }
 
 // 重新生成某个单词的音频（kind: word | ex1 | ex2 | all，默认 all）
-// 生成成功的才覆盖数据库记录；失败的保留原值
+// 每次生成为新版本（时间戳文件名），登记进 WordAudio 并设为当前；旧版本保留可回切
+// 生成成功的才更新当前版本；失败的保留原值
 export async function POST(req: Request) {
   try {
     await requireAdmin();
@@ -71,38 +83,24 @@ export async function POST(req: Request) {
     altText: typeof body.altText === "string" && body.altText.trim() ? body.altText.trim() : undefined,
   };
 
-  const data: { audioWord?: string; audioEx1?: string; audioEx2?: string } = {};
   const failed: string[] = [];
   const reasons: Record<string, string> = {};
-  if (kind === "word" || kind === "all") {
-    const out: { error?: string } = {};
-    const a = await synthesize(w.text, `${w.id}_word.wav`, { ...regenOpts, out });
-    if (a) data.audioWord = a;
+  // 时间戳保证每次生成都是新文件，不覆盖旧版本
+  const ts = Date.now();
+  const kinds: Array<{ k: "word" | "ex1" | "ex2"; text: string }> = [
+    { k: "word", text: w.text },
+    { k: "ex1", text: w.example1 },
+    { k: "ex2", text: w.example2 },
+  ];
+  for (const { k, text } of kinds) {
+    if (kind !== k && kind !== "all") continue;
+    const out: { voice?: string; error?: string } = {};
+    const a = await synthesize(text, `${w.id}_${k}_${ts}.wav`, { ...regenOpts, out });
+    if (a) await registerAudioVersion(w.id, k, a, out.voice || "");
     else {
-      failed.push("word");
-      reasons.word = out.error || "未知原因";
+      failed.push(k);
+      reasons[k] = out.error || "未知原因";
     }
-  }
-  if (kind === "ex1" || kind === "all") {
-    const out: { error?: string } = {};
-    const a = await synthesize(w.example1, `${w.id}_ex1.wav`, { ...regenOpts, out });
-    if (a) data.audioEx1 = a;
-    else {
-      failed.push("ex1");
-      reasons.ex1 = out.error || "未知原因";
-    }
-  }
-  if (kind === "ex2" || kind === "all") {
-    const out: { error?: string } = {};
-    const a = await synthesize(w.example2, `${w.id}_ex2.wav`, { ...regenOpts, out });
-    if (a) data.audioEx2 = a;
-    else {
-      failed.push("ex2");
-      reasons.ex2 = out.error || "未知原因";
-    }
-  }
-  if (Object.keys(data).length > 0) {
-    await prisma.word.update({ where: { id: w.id }, data });
   }
   const updated = await prisma.word.findUnique({
     where: { id: w.id },
