@@ -96,6 +96,9 @@ interface AudioWord {
   fileEx2: boolean;
 }
 
+// 音频资源列表每页条数
+const AUDIO_PAGE_SIZE = 100;
+
 interface ImportEvent {
   ts: number;
   kind: "word" | "audio" | "info";
@@ -185,6 +188,25 @@ export default function AdminPage() {
   const [regenAltText, setRegenAltText] = useState("");
   // 待批准音频区块提示
   const [approveMsg, setApproveMsg] = useState("");
+  // 音频资源列表分页（筛选变化时重置到第 1 页）
+  const [audioPage, setAudioPage] = useState(1);
+
+  const audioFiltered = (audioWords ?? []).filter((w) => {
+    const q = audioFilter.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      w.text.toLowerCase().includes(q) ||
+      w.phonetic.toLowerCase().includes(q) ||
+      w.book.toLowerCase().includes(q) ||
+      w.unit.toLowerCase().includes(q)
+    );
+  });
+  const audioPageCount = Math.max(1, Math.ceil(audioFiltered.length / AUDIO_PAGE_SIZE));
+  const audioPageSafe = Math.min(audioPage, audioPageCount);
+  const audioPageItems = audioFiltered.slice(
+    (audioPageSafe - 1) * AUDIO_PAGE_SIZE,
+    audioPageSafe * AUDIO_PAGE_SIZE,
+  );
 
   // 一键补齐全部缺失音频：后台按书断点续传，只生成缺失的条目
   async function backfillAllAudio() {
@@ -494,7 +516,13 @@ export default function AdminPage() {
               : x,
           ),
         );
-        if (!d.ok) alert(`${w.text} 部分音频生成失败：${(d.failed || []).join(", ")}`);
+        if (!d.ok) {
+          const reasons = (d.reasons ?? {}) as Record<string, string>;
+          const detail = ((d.failed || []) as string[])
+            .map((k) => (reasons[k] ? `${k}（${reasons[k]}）` : k))
+            .join(", ");
+          alert(`${w.text} 部分音频生成失败：${detail}`);
+        }
       } else {
         alert(d.error || "重新生成失败");
       }
@@ -1886,7 +1914,10 @@ export default function AdminPage() {
             {backfillMsg && <span className="text-sm text-black/60">{backfillMsg}</span>}
             <input
               value={audioFilter}
-              onChange={(e) => setAudioFilter(e.target.value)}
+              onChange={(e) => {
+                setAudioFilter(e.target.value);
+                setAudioPage(1);
+              }}
               placeholder="筛选单词 / 音标 / 词书 / 单元"
               className="border rounded-lg px-3 py-1.5 text-sm w-72 outline-none focus:ring-2 ring-accent"
             />
@@ -1903,19 +1934,7 @@ export default function AdminPage() {
               ，点击 ▶ 试听，↻ 重新生成（按当前 TTS 设置与音标）
             </p>
             <div className="divide-y max-h-[32rem] overflow-y-auto">
-              {audioWords
-                .filter((w) => {
-                  const q = audioFilter.trim().toLowerCase();
-                  if (!q) return true;
-                  return (
-                    w.text.toLowerCase().includes(q) ||
-                    w.phonetic.toLowerCase().includes(q) ||
-                    w.book.toLowerCase().includes(q) ||
-                    w.unit.toLowerCase().includes(q)
-                  );
-                })
-                .slice(0, 300)
-                .map((w) => (
+              {audioPageItems.map((w) => (
                   <Fragment key={w.id}>
                   <div className="flex items-center gap-3 py-1.5 text-sm">
                     <div className="w-52 shrink-0">
@@ -2010,8 +2029,27 @@ export default function AdminPage() {
                   </Fragment>
                 ))}
             </div>
-            {audioFilter.trim() === "" && audioWords.length > 300 && (
-              <p className="text-xs text-black/40 mt-2">仅显示前 300 条，请用筛选缩小范围</p>
+            {audioPageCount > 1 && (
+              <div className="flex items-center gap-3 mt-3 text-xs text-black/60">
+                <button
+                  onClick={() => setAudioPage((p) => Math.max(1, p - 1))}
+                  disabled={audioPageSafe <= 1}
+                  className="border rounded-lg px-2.5 py-1 hover:bg-black/5 disabled:opacity-40"
+                >
+                  上一页
+                </button>
+                <span>
+                  第 {audioPageSafe} / {audioPageCount} 页
+                  {audioFilter.trim() !== "" && `（筛选出 ${audioFiltered.length} 条）`}
+                </span>
+                <button
+                  onClick={() => setAudioPage((p) => Math.min(audioPageCount, p + 1))}
+                  disabled={audioPageSafe >= audioPageCount}
+                  className="border rounded-lg px-2.5 py-1 hover:bg-black/5 disabled:opacity-40"
+                >
+                  下一页
+                </button>
+              </div>
             )}
           </>
         )}

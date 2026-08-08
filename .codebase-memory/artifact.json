@@ -1,11 +1,11 @@
 {
     "schema_version": 1,
-    "commit": "6a629d1495b657027512cb4e9cfd6adf72428722",
-    "indexed_at": "2026-08-03T15:59:24Z",
+    "commit": "170b2e974f977f65ae411a8b1e25b878170ba013",
+    "indexed_at": "2026-08-08T06:31:55Z",
     "project": "Users-maxiao-Documents-vibecoding-English-vocab-app",
-    "nodes": 1082,
-    "edges": 2340,
+    "nodes": 1083,
+    "edges": 2308,
     "original_size": 5373952,
-    "compressed_size": 837477,
+    "compressed_size": 836741,
     "compression_level": 3
 }

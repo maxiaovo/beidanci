@@ -73,20 +73,33 @@ export async function POST(req: Request) {
 
   const data: { audioWord?: string; audioEx1?: string; audioEx2?: string } = {};
   const failed: string[] = [];
+  const reasons: Record<string, string> = {};
   if (kind === "word" || kind === "all") {
-    const a = await synthesize(w.text, `${w.id}_word.wav`, regenOpts);
+    const out: { error?: string } = {};
+    const a = await synthesize(w.text, `${w.id}_word.wav`, { ...regenOpts, out });
     if (a) data.audioWord = a;
-    else failed.push("word");
+    else {
+      failed.push("word");
+      reasons.word = out.error || "未知原因";
+    }
   }
   if (kind === "ex1" || kind === "all") {
-    const a = await synthesize(w.example1, `${w.id}_ex1.wav`, regenOpts);
+    const out: { error?: string } = {};
+    const a = await synthesize(w.example1, `${w.id}_ex1.wav`, { ...regenOpts, out });
     if (a) data.audioEx1 = a;
-    else failed.push("ex1");
+    else {
+      failed.push("ex1");
+      reasons.ex1 = out.error || "未知原因";
+    }
   }
   if (kind === "ex2" || kind === "all") {
-    const a = await synthesize(w.example2, `${w.id}_ex2.wav`, regenOpts);
+    const out: { error?: string } = {};
+    const a = await synthesize(w.example2, `${w.id}_ex2.wav`, { ...regenOpts, out });
     if (a) data.audioEx2 = a;
-    else failed.push("ex2");
+    else {
+      failed.push("ex2");
+      reasons.ex2 = out.error || "未知原因";
+    }
   }
   if (Object.keys(data).length > 0) {
     await prisma.word.update({ where: { id: w.id }, data });
@@ -98,6 +111,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: failed.length === 0,
     failed,
+    reasons,
     ...updated,
     fileWord: fileExists(updated?.audioWord),
     fileEx1: fileExists(updated?.audioEx1),

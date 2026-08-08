@@ -7,6 +7,7 @@ import type { TTSConfig } from "./settings";
 export interface SynthesizeOpts {
   voice?: string;
   instruction?: string;
+  out?: { error?: string }; // 失败时回传原因，供管理端展示
 }
 
 export async function synthesizeSpeech(
@@ -33,6 +34,7 @@ export async function synthesizeSpeech(
     input,
   };
 
+  let reason = "未知原因";
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await fetch(url, {
@@ -43,13 +45,14 @@ export async function synthesizeSpeech(
       });
       if (!res.ok) {
         const errText = (await res.text()).slice(0, 400);
-        console.error(`TTS HTTP ${res.status}: ${errText}`);
-        // 5xx 瞬断重试；4xx（音色/参数错误）不重试
-        if (res.status >= 500 && attempt < 3) {
+        reason = `HTTP ${res.status}: ${errText.slice(0, 150)}`;
+        console.error(`TTS ${reason}`);
+        // 5xx 瞬断与 429 限流重试；其余 4xx（音色/参数错误）不重试
+        if ((res.status >= 500 || res.status === 429) && attempt < 3) {
           await sleep(attempt * 2000);
           continue;
         }
-        return null;
+        break;
       }
       const json = (await res.json()) as {
         code?: string;
@@ -58,28 +61,38 @@ export async function synthesizeSpeech(
       };
       // DashScope 业务错误：HTTP 仍为 200 但响应体带 code/message
       if (json.code) {
-        console.error(`TTS 业务错误 ${json.code}: ${json.message}`);
-        return null;
+        reason = `${json.code}: ${json.message ?? ""}`;
+        console.error(`TTS 业务错误 ${reason}`);
+        // 限流类业务错误重试，其余（参数/音色错误）不重试
+        if (/throttl/i.test(json.code) && attempt < 3) {
+          await sleep(attempt * 2000);
+          continue;
+        }
+        break;
       }
       const audioUrl = json.output?.audio?.url;
       if (!audioUrl) {
-        console.error("TTS 响应缺少 output.audio.url:", JSON.stringify(json).slice(0, 300));
-        return null;
+        reason = "响应缺少 output.audio.url";
+        console.error(`TTS ${reason}:`, JSON.stringify(json).slice(0, 300));
+        break;
       }
       // 下载音频二进制（24h 有效 URL）
       const wav = await downloadAudio(audioUrl);
       if (wav && wav.length >= 100) return wav;
-      console.error("TTS 音频下载失败或过短", wav?.length);
+      reason = `音频下载失败或过短（${wav?.length ?? 0} 字节）`;
+      console.error(`TTS ${reason}`);
       if (attempt < 3) {
         await sleep(attempt * 2000);
         continue;
       }
-      return null;
+      break;
     } catch (e) {
+      reason = e instanceof Error ? e.message : String(e);
       console.error(`TTS 调用失败（第 ${attempt} 次）:`, e);
       if (attempt < 3) await sleep(attempt * 2000);
     }
   }
+  if (opts?.out) opts.out.error = reason;
   return null;
 }
 
