@@ -64,6 +64,7 @@ export interface WritingModelSentence {
   role: BilingualTeachingText;
   explanation: BilingualTeachingText;
   pattern: string;
+  patternZh?: string;
   pitfall: BilingualTeachingText;
 }
 
@@ -142,6 +143,7 @@ export function validateImitationPrompt(value: unknown): WritingPrompt {
       role: bilingual(item.role, `model.sentences[${index}].role`),
       explanation: bilingual(item.explanation, `model.sentences[${index}].explanation`),
       pattern: requiredString(item.pattern, `model.sentences[${index}].pattern`),
+      patternZh: typeof item.patternZh === "string" && item.patternZh.trim() ? item.patternZh.trim() : undefined,
       pitfall: bilingual(item.pitfall, `model.sentences[${index}].pitfall`),
     };
   });

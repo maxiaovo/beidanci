@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { BilingualTeachingText, WritingPrompt } from "@/lib/writing-types";
+import type { BilingualTeachingText, WritingModelSentence, WritingPrompt } from "@/lib/writing-types";
 
 type Json = Record<string, unknown>;
 
@@ -100,15 +100,17 @@ export default function WritingPage() {
     if (r.ok) setOverview(data);
   }, [router]);
 
-  const loadSession = useCallback(async (id: string) => {
+  const loadSession = useCallback(async (id: string, reset = true) => {
     const r = await fetch(`/api/writing/sessions/${id}`);
     const data = await r.json();
     if (r.ok) {
       setSession(data.session);
-      setDraft("");
-      setHint(null);
-      setShowExample(true);
-      setFlashFeedback(null);
+      if (reset) {
+        setDraft("");
+        setHint(null);
+        setShowExample(true);
+        setFlashFeedback(null);
+      }
     } else setError(data.error || "读取练习失败");
   }, []);
 
@@ -155,9 +157,23 @@ export default function WritingPage() {
     if (!activeTask || !draft.trim()) return;
     const data = await post(`/api/writing/tasks/${activeTask.id}/attempts`, { text: draft, clientRequestId: requestId() });
     if (data) {
-      await Promise.all([loadSession(session!.id), loadOverview()]);
+      await Promise.all([loadSession(session!.id, false), loadOverview()]);
       setFlashFeedback({ feedback: data.attempt.feedback, passed: data.passed });
-      if (!data.passed) setDraft("");
+      if (data.passed) {
+        setDraft("");
+        setHint(null);
+        setShowExample(true);
+      } else if (data.guided) {
+        // 连续 3 轮未过关：自动展示完整引导（关键词+骨架+示范+分步重建），不再等用户点提示按钮
+        const feedback = data.attempt.feedback as Feedback;
+        setHint({
+          keywords: feedback.hints?.keywords ?? [],
+          frame: feedback.hints?.frame ?? "",
+          guidedSteps: feedback.hints?.guidedSteps ?? [],
+          modelAnswer: feedback.modelAnswer ?? "",
+        });
+        setShowExample(false);
+      }
     }
   }
 
@@ -167,7 +183,7 @@ export default function WritingPage() {
     if (data) {
       setHint(data.hint);
       setShowExample(data.level < 3);
-      await loadSession(session!.id);
+      await loadSession(session!.id, false);
     }
   }
 
@@ -176,7 +192,7 @@ export default function WritingPage() {
     const data = await post(`/api/writing/sessions/${session.id}/messages`, { content: chat });
     if (data) {
       setChat("");
-      await loadSession(session.id);
+      await loadSession(session.id, false);
     }
   }
 
@@ -234,6 +250,7 @@ export default function WritingPage() {
           draft={draft}
           setDraft={setDraft}
           busy={busy}
+          error={error}
           chat={chat}
           setChat={setChat}
           hint={hint}
@@ -320,12 +337,53 @@ function PracticeMenu(props: { busy: boolean; active: Overview["activeSession"];
   </div>;
 }
 
-function teachingText(text: BilingualTeachingText, language: "en" | "zh") {
-  return language === "en" ? text.en : text.zh;
+function Bilingual({ text, enClassName = "" }: { text: BilingualTeachingText; enClassName?: string }) {
+  const [showZh, setShowZh] = useState(false);
+  return (
+    <span className="block">
+      <span className="flex items-start gap-2">
+        <span className={`min-w-0 flex-1 ${enClassName}`}>{text.en}</span>
+        <button
+          type="button"
+          onClick={() => setShowZh((current) => !current)}
+          aria-label={showZh ? "隐藏中文翻译" : "显示中文翻译"}
+          aria-pressed={showZh}
+          title={showZh ? "隐藏中文翻译" : "显示中文翻译"}
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[11px] font-black transition ${showZh ? "border-accent bg-accent text-white" : "border-black/10 bg-white text-black/45 hover:border-accent hover:text-accent"}`}
+        >
+          T
+        </button>
+      </span>
+      {showZh && <span className="mt-1 block rounded-lg bg-white/80 px-2.5 py-1.5 text-[13px] leading-6 text-black/60">{text.zh}</span>}
+    </span>
+  );
+}
+
+function SentenceNotes({ sentence }: { sentence: WritingModelSentence }) {
+  return (
+    <div className="text-sm leading-6">
+      <div>
+        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-bold text-accent">JOB · 作用</span>
+        <div className="mt-1.5"><Bilingual text={sentence.role} /></div>
+      </div>
+      <div className="mt-3 text-black/70"><Bilingual text={sentence.explanation} /></div>
+      <div className="mt-3 rounded-lg bg-white p-3">
+        <b>Pattern to steal · 可以拿走的骨架</b>
+        {sentence.patternZh ? (
+          <Bilingual text={{ en: sentence.pattern, zh: sentence.patternZh }} enClassName="break-words font-mono text-[13px] text-accent" />
+        ) : (
+          <code className="break-words text-accent">{sentence.pattern}</code>
+        )}
+      </div>
+      <div className="mt-3 text-black/60">
+        <b>Watch out · 容易踩的坑</b>
+        <Bilingual text={sentence.pitfall} />
+      </div>
+    </div>
+  );
 }
 
 export function TeachingScaffold({ prompt, showExample, setShowExample }: { prompt: WritingPrompt; showExample: boolean; setShowExample: (value: boolean) => void }) {
-  const [language, setLanguage] = useState<"en" | "zh">("en");
   const [translations, setTranslations] = useState<Set<number>>(new Set());
   const sentences = prompt.model?.sentences ?? [];
 
@@ -344,36 +402,26 @@ export function TeachingScaffold({ prompt, showExample, setShowExample }: { prom
     <div className="mt-4 flex flex-col gap-4">
       {prompt.prewriting && (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Before you write</div>
-              <h3 className="mt-1 text-lg font-black">{language === "en" ? "Think first. Write second." : "先想清楚，再落笔"}</h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setLanguage((current) => current === "en" ? "zh" : "en")}
-              aria-label={language === "en" ? "切换为中文讲解" : "Switch explanations to English"}
-              className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800"
-            >
-              {language === "en" ? "中文讲解" : "English"}
-            </button>
+          <div>
+            <div className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Before you write · 动笔之前</div>
+            <h3 className="mt-1 text-lg font-black">Think first. Write second.<span className="ml-2 text-sm font-bold text-black/40">先想清楚，再落笔</span></h3>
           </div>
-          <p className="mt-3 font-bold leading-7 text-amber-950">{teachingText(prompt.prewriting.coach, language)}</p>
+          <div className="mt-3 font-bold leading-7 text-amber-950"><Bilingual text={prompt.prewriting.coach} /></div>
           <div className="mt-3 rounded-xl bg-white/75 p-3 text-sm leading-6">
-            <b>{language === "en" ? "Today’s goal: " : "本题目标："}</b>
-            {teachingText(prompt.prewriting.goal, language)}
+            <b>Today’s goal · 本题目标</b>
+            <Bilingual text={prompt.prewriting.goal} />
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <h4 className="text-sm font-black text-amber-900">{language === "en" ? "Your route" : "下笔路线"}</h4>
+              <h4 className="text-sm font-black text-amber-900">Your route · 下笔路线</h4>
               <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-amber-950">
-                {prompt.prewriting.steps.map((step, index) => <li key={index}>{teachingText(step, language)}</li>)}
+                {prompt.prewriting.steps.map((step, index) => <li key={index}><Bilingual text={step} /></li>)}
               </ol>
             </div>
             <div>
-              <h4 className="text-sm font-black text-amber-900">{language === "en" ? "Quick check" : "提交前检查"}</h4>
+              <h4 className="text-sm font-black text-amber-900">Quick check · 提交前检查</h4>
               <ul className="mt-2 space-y-1.5 text-sm leading-6 text-amber-950">
-                {prompt.prewriting.checklist.map((item, index) => <li key={index} className="flex gap-2"><span aria-hidden="true">□</span><span>{teachingText(item, language)}</span></li>)}
+                {prompt.prewriting.checklist.map((item, index) => <li key={index} className="flex gap-2"><span aria-hidden="true">□</span><span className="min-w-0 flex-1"><Bilingual text={item} /></span></li>)}
               </ul>
             </div>
           </div>
@@ -383,16 +431,9 @@ export function TeachingScaffold({ prompt, showExample, setShowExample }: { prom
       {sentences.length > 0 ? (
         showExample ? (
           <section className="rounded-2xl border border-accent/25 bg-white p-4 sm:p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Model & explanation</div>
-                <h3 className="mt-1 text-lg font-black">{language === "en" ? "See how the sentence works" : "看懂这句话怎么工作"}</h3>
-              </div>
-              {!prompt.prewriting && (
-                <button type="button" onClick={() => setLanguage((current) => current === "en" ? "zh" : "en")} className="rounded-full border border-black/10 px-3 py-1.5 text-xs font-bold">
-                  {language === "en" ? "中文讲解" : "English"}
-                </button>
-              )}
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Model & explanation · 示范与讲解</div>
+              <h3 className="mt-1 text-lg font-black">See how the sentence works<span className="ml-2 text-sm font-bold text-black/40">看懂这句话怎么工作</span></h3>
             </div>
             <div className="mt-4 flex flex-col gap-4">
               {sentences.map((sentence, index) => {
@@ -415,20 +456,15 @@ export function TeachingScaffold({ prompt, showExample, setShowExample }: { prom
                       </button>
                     </div>
                     {translated && <p id={translationId} className="mt-2 rounded-lg bg-white px-3 py-2 text-sm leading-6 text-black/65">{sentence.translationZh}</p>}
-                    <div className="mt-4 border-t border-black/8 pt-4 text-sm leading-6">
-                      <p><span className="mr-2 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-bold text-accent">{language === "en" ? "JOB" : "作用"}</span>{teachingText(sentence.role, language)}</p>
-                      <p className="mt-3 text-black/70">{teachingText(sentence.explanation, language)}</p>
-                      <div className="mt-3 rounded-lg bg-white p-3"><b>{language === "en" ? "Pattern to steal: " : "可以拿走的骨架："}</b><code className="break-words text-accent">{sentence.pattern}</code></div>
-                      <p className="mt-3 text-black/60"><b>{language === "en" ? "Watch out: " : "容易踩的坑："}</b>{teachingText(sentence.pitfall, language)}</p>
-                    </div>
+                    <div className="mt-4 border-t border-black/8 pt-4"><SentenceNotes sentence={sentence} /></div>
                   </article>
                 );
               })}
             </div>
-            <button type="button" onClick={() => setShowExample(false)} className="mt-4 text-sm font-bold underline underline-offset-4">{language === "en" ? "I understand it — hide the model and let me write" : "我看懂了，隐藏示范开始仿写"}</button>
+            <button type="button" onClick={() => setShowExample(false)} className="mt-4 text-sm font-bold underline underline-offset-4">我看懂了，隐藏示范开始仿写</button>
           </section>
         ) : (
-          <button type="button" onClick={() => setShowExample(true)} className="w-fit text-sm font-bold text-black/45 underline underline-offset-4">{language === "en" ? "Show the model one more time" : "暂时再看一次示范"}</button>
+          <button type="button" onClick={() => setShowExample(true)} className="w-fit text-sm font-bold text-black/45 underline underline-offset-4">暂时再看一次示范</button>
         )
       ) : prompt.example ? (
         <div>{showExample ? <div className="rounded-xl border border-accent/25 bg-white p-4"><div className="text-xs font-bold text-accent">示范句</div><p className="mt-1 text-lg">{prompt.example}</p><button type="button" onClick={() => setShowExample(false)} className="mt-3 text-sm font-bold underline">我记住了，隐藏示范</button></div> : <button type="button" onClick={() => setShowExample(true)} className="text-sm text-black/40 underline">暂时再看一次示范</button>}</div>
@@ -439,17 +475,136 @@ export function TeachingScaffold({ prompt, showExample, setShowExample }: { prom
   );
 }
 
-function Workspace(props: { session: Session; activeTask: Task | null; latestAttempt: Attempt | null; flashFeedback: { feedback: Feedback; passed: boolean } | null; draft: string; setDraft: (x: string) => void; busy: boolean; chat: string; setChat: (x: string) => void; hint: Json | null; showExample: boolean; setShowExample: (x: boolean) => void; submit: () => Promise<void>; sendChat: () => Promise<void>; unlockHint: () => Promise<void>; close: () => void }) {
+export function ImitationRitual({ prompt, onDone }: { prompt: WritingPrompt; onDone: () => void }) {
+  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [recall, setRecall] = useState("");
+  const [showTranslation, setShowTranslation] = useState(false);
+  const sentences = prompt.model?.sentences ?? [];
+  const english = sentences.map((sentence) => sentence.english).join(" ");
+  const translation = sentences.map((sentence) => sentence.translationZh).join(" ");
+  const pattern = sentences.map((sentence) => sentence.pattern).join(" ");
+  const stages = ["看示范", "默写", "对照", "仿写"];
+
+  return (
+    <div className="mt-4">
+      <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold">
+        {stages.map((label, index) => (
+          <li key={label} className="flex items-center gap-2">
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full border ${index <= step ? "border-accent bg-accent text-white" : "border-black/15 text-black/30"}`}>{index + 1}</span>
+            <span className={index <= step ? "text-accent" : "text-black/30"}>{label}</span>
+            {index < stages.length - 1 && <span className="text-black/20">→</span>}
+          </li>
+        ))}
+      </ol>
+
+      {step === 0 && (
+        <section className="mt-4 rounded-2xl border border-accent/25 bg-white p-6 text-center sm:p-8">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Model · 记住这句话</div>
+          <div className="mx-auto mt-5 flex max-w-2xl items-start justify-center gap-3 text-left">
+            <p className="min-w-0 text-2xl font-black leading-10">{english}</p>
+            <button
+              type="button"
+              onClick={() => setShowTranslation((current) => !current)}
+              aria-label={showTranslation ? "隐藏中文翻译" : "显示中文翻译"}
+              aria-pressed={showTranslation}
+              title={showTranslation ? "隐藏中文翻译" : "显示中文翻译"}
+              className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-sm font-black transition ${showTranslation ? "border-accent bg-accent text-white" : "border-black/10 bg-white text-black/55 hover:border-accent hover:text-accent"}`}
+            >
+              T
+            </button>
+          </div>
+          {showTranslation && <p className="mx-auto mt-3 max-w-2xl rounded-lg bg-background px-4 py-2 text-left text-sm leading-6 text-black/65">{translation}</p>}
+          <details className="mx-auto mt-6 max-w-2xl text-left">
+            <summary className="cursor-pointer text-sm font-bold text-black/50">想先吃透再默？展开逐句讲解</summary>
+            <div className="mt-3 flex flex-col gap-3">
+              {sentences.map((sentence, index) => <div key={index} className="rounded-xl bg-background p-4"><SentenceNotes sentence={sentence} /></div>)}
+            </div>
+          </details>
+          <button type="button" onClick={() => setStep(1)} className="mt-7 rounded-xl bg-foreground px-7 py-3 font-bold text-white">我记住了，开始默写 →</button>
+        </section>
+      )}
+
+      {step === 1 && (
+        <section className="mt-4 rounded-2xl border border-accent/25 bg-white p-6 sm:p-8">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Recall · 凭记忆重建</div>
+          <p className="mt-3 text-sm leading-6 text-black/55">示范已经藏起来了。看着中文意思和句型骨架，把英文原句默出来。</p>
+          <div className="mt-4 rounded-xl bg-background p-4">
+            <div className="text-xs font-bold text-black/40">中文意思</div>
+            <p className="mt-1 leading-7">{translation}</p>
+            <div className="mt-3 text-xs font-bold text-black/40">句型骨架</div>
+            <code className="mt-1 block break-words text-accent">{pattern}</code>
+          </div>
+          <textarea value={recall} onChange={(event) => setRecall(event.target.value)} maxLength={2000} rows={3} placeholder="在这里默写英文原句…" className="mt-4 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <button type="button" disabled={!recall.trim()} onClick={() => setStep(2)} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">写好了，对照原句</button>
+            <button type="button" onClick={() => setStep(0)} className="text-sm font-bold text-black/45 underline underline-offset-4">想不起来，回去再看一眼</button>
+          </div>
+        </section>
+      )}
+
+      {step === 2 && (
+        <section className="mt-4 rounded-2xl border border-accent/25 bg-white p-6 sm:p-8">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Compare · 对照一下</div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl bg-background p-4">
+              <div className="text-xs font-bold text-black/40">你默的</div>
+              <p className="mt-1 whitespace-pre-wrap leading-8">{recall}</p>
+            </div>
+            <div className="rounded-xl bg-background p-4">
+              <div className="text-xs font-bold text-black/40">原句</div>
+              <p className="mt-1 font-bold leading-8">{english}</p>
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-4">
+            <button type="button" onClick={onDone} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white">可以了，开始仿写 →</button>
+            <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold">差得有点多，再默一次</button>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function Workspace(props: { session: Session; activeTask: Task | null; latestAttempt: Attempt | null; flashFeedback: { feedback: Feedback; passed: boolean } | null; draft: string; setDraft: (x: string) => void; busy: boolean; error: string; chat: string; setChat: (x: string) => void; hint: Json | null; showExample: boolean; setShowExample: (x: boolean) => void; submit: () => Promise<void>; sendChat: () => Promise<void>; unlockHint: () => Promise<void>; close: () => void }) {
   const { session, activeTask } = props;
+  const [ritualDoneFor, setRitualDoneFor] = useState<string | null>(null);
+  const isImitation = !!activeTask && session.mode === "imitation" && (activeTask.prompt.model?.sentences.length ?? 0) > 0;
+  const ritualPending = isImitation && ritualDoneFor !== activeTask!.id;
   return <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
     <section className="rounded-[2rem] bg-white p-5 shadow sm:p-7">
       <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold uppercase tracking-wider text-accent">{session.kind === "review" ? "错点复练" : "当前练习"}</div><h2 className="mt-1 text-2xl font-black">{session.title}</h2></div><button onClick={props.close} className="text-sm text-black/40 underline">返回</button></div>
       {session.mode === "translation" && session.tasks.length === 0 ? <div className="mt-6"><div className="flex max-h-96 flex-col gap-3 overflow-y-auto">{session.messages.map((message) => <div key={message.id} className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${message.role === "user" ? "ml-auto bg-foreground text-white" : "bg-black/[.04]"}`}>{message.content}</div>)}</div><div className="mt-4 flex gap-2"><textarea value={props.chat} onChange={(e) => props.setChat(e.target.value)} maxLength={1000} rows={3} placeholder="用中文说说你的想法…" className="min-w-0 flex-1 rounded-xl border border-black/10 p-3" /><button disabled={props.busy || !props.chat.trim()} onClick={props.sendChat} className="rounded-xl bg-foreground px-5 font-bold text-white disabled:opacity-40">发送</button></div></div> : activeTask ? <div className="mt-6">
-        <div className="rounded-2xl bg-background p-5"><div className="text-sm font-bold text-accent">第 {activeTask.orderIndex + 1} 题</div><p className="mt-2 text-lg font-bold leading-8">{activeTask.prompt.instruction}</p>{activeTask.prompt.chinese && <div className="mt-3 whitespace-pre-wrap rounded-xl bg-white p-4">{activeTask.prompt.chinese}</div>}<TeachingScaffold key={activeTask.id} prompt={activeTask.prompt} showExample={props.showExample} setShowExample={props.setShowExample} /></div>
+        <div className="rounded-2xl bg-background p-5"><div className="text-sm font-bold text-accent">第 {activeTask.orderIndex + 1} 题</div><p className="mt-2 text-lg font-bold leading-8">{activeTask.prompt.instruction}</p>{activeTask.prompt.chinese && <div className="mt-3 whitespace-pre-wrap rounded-xl bg-white p-4">{activeTask.prompt.chinese}</div>}{ritualPending ? (
+          <ImitationRitual key={activeTask.id} prompt={activeTask.prompt} onDone={() => setRitualDoneFor(activeTask.id)} />
+        ) : (
+          <>
+            <TeachingScaffold key={activeTask.id} prompt={isImitation ? { ...activeTask.prompt, model: undefined, example: undefined } : activeTask.prompt} showExample={props.showExample} setShowExample={props.setShowExample} />
+            {isImitation && <button type="button" onClick={() => setRitualDoneFor(null)} className="mt-3 text-sm font-bold text-black/40 underline underline-offset-4">回到示范，再走一遍</button>}
+          </>
+        )}</div>
+        {!ritualPending && (
+        <>
         {props.flashFeedback ? <FeedbackCard feedback={props.flashFeedback.feedback} passed={props.flashFeedback.passed} /> : props.latestAttempt && <FeedbackCard feedback={props.latestAttempt.feedback} passed={props.latestAttempt.passed} />}
+        {activeTask.attempts.length > 1 && (
+          <div className="mt-5">
+            <div className="text-sm font-bold text-black/45">前几轮</div>
+            <div className="mt-2 flex flex-col gap-2">
+              {activeTask.attempts.slice(0, -1).map((attempt) => (
+                <details key={attempt.id} className="rounded-xl border border-black/8 bg-background p-3">
+                  <summary className="cursor-pointer text-sm font-bold">第 {attempt.version} 轮{attempt.passed ? " · 已过关" : " · 未过关"}<span className="ml-2 font-normal text-black/40">原文与批改</span></summary>
+                  <p className="mt-2 whitespace-pre-wrap rounded-lg bg-white p-3 text-sm leading-7">{attempt.text}</p>
+                  <FeedbackCard feedback={attempt.feedback} passed={attempt.passed} />
+                </details>
+              ))}
+            </div>
+          </div>
+        )}
         {props.hint && <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm"><div className="font-bold text-blue-700">本级帮助</div><pre className="mt-2 whitespace-pre-wrap font-sans text-blue-900">{Object.entries(props.hint).map(([key, value]) => `${key === "keywords" ? "关键词" : key === "frame" ? "句型骨架" : key === "modelAnswer" ? "示范" : "分步重建"}：${Array.isArray(value) ? value.join(" · ") : String(value)}`).join("\n")}</pre>{"modelAnswer" in props.hint && <button onClick={() => props.setShowExample(false)} className="mt-2 font-bold underline">隐藏示范，开始回忆重写</button>}</div>}
         <textarea value={props.draft} onChange={(e) => props.setDraft(e.target.value)} maxLength={5000} rows={activeTask.type === "article" ? 10 : 5} placeholder="在这里写英文…" className="mt-5 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />
-        <div className="mt-3 flex flex-wrap gap-3"><button disabled={props.busy || !props.draft.trim()} onClick={props.submit} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">{props.busy ? "DeepSeek 正在批改…" : activeTask.attempts.length ? "提交改写" : "提交批改"}</button><button disabled={props.busy || activeTask.hintLevel >= 3} onClick={props.unlockHint} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold disabled:opacity-35">{activeTask.hintLevel === 0 ? "给我关键词" : activeTask.hintLevel === 1 ? "给我句型骨架" : "给我示范并分步重建"}</button></div>
+        <div className="mt-3 flex flex-wrap gap-3"><button disabled={props.busy || !props.draft.trim()} onClick={props.submit} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">{props.busy ? "DeepSeek 正在批改…" : activeTask.attempts.length ? "提交改写" : "提交批改"}</button><button disabled={props.busy} onClick={props.unlockHint} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold disabled:opacity-35">{activeTask.hintLevel === 0 ? "给我关键词" : activeTask.hintLevel === 1 ? "给我句型骨架" : "给我示范并分步重建"}</button></div>
+        {props.error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{props.error}</div>}
+        </>
+        )}
       </div> : <div className="py-10 text-center"><div className="text-4xl">✓</div><h3 className="mt-3 text-2xl font-black">本次练习已完成</h3><p className="mt-2 text-black/45">错点已经进入记忆队列，系统会稍微变样后再考你。</p>{props.flashFeedback && <div className="text-left"><FeedbackCard feedback={props.flashFeedback.feedback} passed={props.flashFeedback.passed} /></div>}<button onClick={props.close} className="mt-5 rounded-xl bg-foreground px-6 py-3 font-bold text-white">回到写作首页</button></div>}
     </section>
     <aside className="rounded-[2rem] bg-white p-5 shadow"><h3 className="font-black">本次进度</h3><div className="mt-4 flex flex-col gap-3">{session.tasks.map((task) => <div key={task.id} className={`rounded-xl border p-3 text-sm ${task.status === "passed" ? "border-green-200 bg-green-50" : task.id === activeTask?.id ? "border-accent bg-accent/5" : "border-black/5"}`}><b>第 {task.orderIndex + 1} 题</b><span className="float-right">{task.status === "passed" ? "已过关" : `${task.attempts.length} 次尝试`}</span></div>)}</div>{session.messages.length > 0 && <details className="mt-5"><summary className="cursor-pointer font-bold">想法聊天记录</summary><div className="mt-2 flex flex-col gap-2 text-sm">{session.messages.map((m) => <div key={m.id} className="rounded-lg bg-black/[.03] p-2"><b>{m.role === "user" ? "我" : "教练"}：</b>{m.content}</div>)}</div></details>}</aside>

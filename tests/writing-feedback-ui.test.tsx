@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FeedbackCard, TeachingScaffold } from "../app/writing/page";
+import { FeedbackCard, ImitationRitual, TeachingScaffold } from "../app/writing/page";
 import type { WritingPrompt } from "../lib/writing-types";
 
 test("feedback shows strengths before categorized improvements", () => {
@@ -43,4 +43,25 @@ test("imitation teaching starts in English with Chinese translation hidden behin
   assert.match(html, />T<\/button>/);
   assert.doesNotMatch(html, /我以前不吃早餐/);
   assert.doesNotMatch(html, /对比让句子有了故事/);
+});
+
+test("imitation ritual starts focused on the model sentence", () => {
+  const prompt: WritingPrompt = {
+    instruction: "仿写一句。",
+    variation: "换一个习惯。",
+    model: { sentences: [{
+      english: "I used to skip breakfast, but now I eat before school.",
+      translationZh: "我以前不吃早餐，但现在上学前会吃东西。",
+      role: { en: "It shows a change.", zh: "它呈现变化。" },
+      explanation: { en: "The contrast gives the sentence a story.", zh: "对比让句子有了故事。" },
+      pattern: "I used to ___, but now I ___.",
+      pitfall: { en: "Use the base verb after used to.", zh: "used to 后用动词原形。" },
+    }] },
+  };
+  const html = renderToStaticMarkup(<ImitationRitual prompt={prompt} onDone={() => {}} />);
+  for (const stage of ["看示范", "默写", "对照", "仿写"]) assert.match(html, new RegExp(stage));
+  assert.match(html, /I used to skip breakfast/);
+  assert.match(html, /我记住了，开始默写/);
+  // 中文翻译默认不出现，保持聚焦
+  assert.doesNotMatch(html, /我以前不吃早餐/);
 });
