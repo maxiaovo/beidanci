@@ -168,11 +168,13 @@ model BookPlan {
 }
 
 // 跳过复习留痕：管理员开启"允许跳过"后，学习者当天可跳过复习门禁，每次跳过记一条
-// count 记录跳过时待复习的词数（这些词会累积到下次复习环节）
+// module 区分跳过的是单词复习（words）还是写作复练（writing），两种门禁互不影响
+// count 记录跳过时待复习的词数/错点数（这些会累积到下次复习环节）
 model ReviewSkip {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module    String   @default("words")
   count     Int      @default(0)
   createdAt DateTime @default(now())
 }

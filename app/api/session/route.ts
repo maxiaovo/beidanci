@@ -93,7 +93,7 @@ export async function GET(req: Request) {
   let newWords: ReturnType<typeof serializeWord>[] = [];
   const plansOut: PlanOut[] = [];
   const skippedToday =
-    (await prisma.reviewSkip.count({ where: { userId: user.id, createdAt: { gte: start } } })) > 0;
+    (await prisma.reviewSkip.count({ where: { userId: user.id, module: "words", createdAt: { gte: start } } })) > 0;
   const reviewsCleared = reviews.length === 0 || skippedToday;
 
   const plans = await prisma.bookPlan.findMany({

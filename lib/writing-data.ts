@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { isAllowSkipReview } from "./settings";
 import type { WritingContext } from "./writing-ai";
 import { parseJson, type WritingFeedback, type WritingPrompt } from "./writing-types";
 import { startOfLocalDay } from "./writing-scheduler";
@@ -78,7 +79,7 @@ export async function getWritingSessionForViewer(sessionId: string, userId: stri
 
 export async function getWritingOverview(userId: string) {
   const today = startOfLocalDay();
-  const [profile, activeReview, completedReviewToday, dueTotal, activeSession, recent] = await Promise.all([
+  const [profile, activeReview, completedReviewToday, dueTotal, activeSession, recent, skippedToday, allowSkipReview] = await Promise.all([
     prisma.writingProfile.findUnique({ where: { userId } }),
     prisma.writingSession.findFirst({
       where: { userId, kind: "review", status: "active" },
@@ -98,8 +99,11 @@ export async function getWritingOverview(userId: string) {
       take: 12,
       select: { id: true, title: true, mode: true, kind: true, status: true, updatedAt: true, completedAt: true },
     }),
+    // 当天已跳过写作复练（留痕在 reviewSkip，module="writing"）
+    prisma.reviewSkip.count({ where: { userId, module: "writing", createdAt: { gte: today } } }),
+    isAllowSkipReview(),
   ]);
-  const reviewRequired = !!activeReview || (dueTotal > 0 && completedReviewToday === 0);
+  const reviewRequired = skippedToday === 0 && (!!activeReview || (dueTotal > 0 && completedReviewToday === 0));
   return {
     profile: profile
       ? {
@@ -117,6 +121,7 @@ export async function getWritingOverview(userId: string) {
       dueTotal,
       todayCount: activeReview?.tasks.length ?? (reviewRequired ? Math.min(5, dueTotal) : 0),
       sessionId: activeReview?.id ?? null,
+      allowSkip: allowSkipReview,
     },
     activeSession,
     recent,

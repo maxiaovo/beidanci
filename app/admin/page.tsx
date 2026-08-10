@@ -37,6 +37,7 @@ interface LogRow {
 
 interface SkipRow {
   id: string;
+  module: string;
   count: number;
   createdAt: string;
 }
@@ -1243,7 +1244,9 @@ export default function AdminPage() {
                     item.kind === "skip" ? (
                       <div key={item.id} className="flex items-baseline gap-2 border-b border-black/5 pb-1.5">
                         <span className="text-orange-500 font-medium">
-                          ⚠️ 跳过了复习{item.count > 0 && `（${item.count} 词未复习，将累积到下次）`}
+                          {item.module === "writing"
+                            ? `⚠️ 跳过了写作复练${item.count > 0 ? `（${item.count} 个错点未复练，将累积到下次）` : ""}`
+                            : `⚠️ 跳过了复习${item.count > 0 ? `（${item.count} 词未复习，将累积到下次）` : ""}`}
                         </span>
                         <span className="ml-auto text-xs text-black/30">
                           {new Date(item.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}

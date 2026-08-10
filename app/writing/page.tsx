@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BilingualTeachingText, WritingModelSentence, WritingPrompt } from "@/lib/writing-types";
+import { diffWords, normalizeToken, type WordDiffResult } from "@/lib/word-diff";
 
 type Json = Record<string, unknown>;
 
@@ -19,7 +20,7 @@ interface Profile {
 
 interface Overview {
   profile: Profile | null;
-  review: { required: boolean; dueTotal: number; todayCount: number; sessionId: string | null };
+  review: { required: boolean; dueTotal: number; todayCount: number; sessionId: string | null; allowSkip?: boolean };
   activeSession: { id: string; title: string; mode: string } | null;
   recent: { id: string; title: string; mode: string; kind: string; status: string; updatedAt: string }[];
 }
@@ -153,6 +154,12 @@ export default function WritingPage() {
     if (data?.topics) setTopics(data.topics);
   }
 
+  async function skipReview() {
+    // 跳过今天的写作复练门禁（需管理员开启"允许跳过复习"），留痕给家长查看
+    const data = await post("/api/skip-review", { module: "writing" });
+    if (data) await loadOverview();
+  }
+
   async function submitAttempt() {
     if (!activeTask || !draft.trim()) return;
     const data = await post(`/api/writing/tasks/${activeTask.id}/attempts`, { text: draft, clientRequestId: requestId() });
@@ -270,6 +277,13 @@ export default function WritingPage() {
           <button disabled={busy} onClick={() => overview.review.sessionId ? loadSession(overview.review.sessionId) : start("review")} className="mt-5 rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-50">
             {overview.review.sessionId ? "继续复练" : "开始复练"}
           </button>
+          {overview.review.allowSkip && (
+            <div className="mt-4">
+              <button disabled={busy} onClick={skipReview} className="text-sm text-black/40 underline underline-offset-4 hover:text-black/70 cursor-pointer disabled:opacity-50">
+                跳过复习，直接练新内容（家长会看到记录）
+              </button>
+            </div>
+          )}
         </section>
       ) : (
         <PracticeMenu
@@ -475,15 +489,145 @@ export function TeachingScaffold({ prompt, showExample, setShowExample }: { prom
   );
 }
 
+function RecallTokens({ diff }: { diff: WordDiffResult }) {
+  return (
+    <>
+      {diff.segments.map((seg, index) => {
+        const space = index < diff.segments.length - 1 ? " " : "";
+        if (seg.kind === "match") return <span key={index}>{seg.text}{space}</span>;
+        if (seg.kind === "spelling") return (
+          <span key={index}>
+            <span className="rounded bg-amber-100 px-0.5 font-bold text-amber-800 underline decoration-amber-500 decoration-2 underline-offset-4">{seg.text}</span>
+            <span className="ml-1 rounded bg-green-100 px-1 text-sm font-bold text-green-700">{seg.expected}</span>
+            {space}
+          </span>
+        );
+        if (seg.kind === "wording") return (
+          <span key={index}>
+            <span className="rounded bg-red-100 px-0.5 text-red-600 line-through">{seg.text}</span>
+            <span className="ml-1 rounded bg-green-100 px-1 text-sm font-bold text-green-700">{seg.expected}</span>
+            {space}
+          </span>
+        );
+        if (seg.kind === "extra") return (
+          <span key={index}>
+            <span title="原句没有这个词" className="rounded bg-red-50 px-0.5 text-red-400 line-through">{seg.text}</span>
+            {space}
+          </span>
+        );
+        return (
+          <span key={index}>
+            <span title="这个词漏掉了" className="rounded border border-dashed border-black/30 px-1 text-black/35">{seg.text}</span>
+            {space}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function OriginalTokens({ text, diff }: { text: string; diff: WordDiffResult }) {
+  const expectedNorms = new Set(
+    diff.segments.flatMap((seg) => {
+      if (seg.kind === "spelling" || seg.kind === "wording") return [normalizeToken(seg.expected)];
+      if (seg.kind === "missing") return [normalizeToken(seg.text)];
+      return [];
+    }),
+  );
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  return (
+    <>
+      {tokens.map((token, index) => {
+        const hit = expectedNorms.has(normalizeToken(token));
+        return (
+          <span key={index}>
+            {hit ? <span className="rounded bg-amber-100 px-0.5 underline decoration-amber-500 decoration-2 underline-offset-4">{token}</span> : token}
+            {index < tokens.length - 1 ? " " : ""}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function CompareVerdict({ diff }: { diff: WordDiffResult }) {
+  if (diff.identical) {
+    return <p className="mt-4 rounded-xl bg-green-50 px-4 py-3 text-sm font-bold text-green-700">✓ 一字不差，可以直接开始仿写。</p>;
+  }
+  const onlySpelling = diff.spelling.length > 0 && diff.wording.length === 0 && diff.missing.length === 0 && diff.extra.length === 0;
+  if (onlySpelling) {
+    return (
+      <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+        <b>意思全对，就差 {diff.spelling.length} 处拼写：</b>
+        {diff.spelling.map((item) => `${item.wrote} → ${item.expected}`).join("；")}
+      </p>
+    );
+  }
+  const parts = [
+    diff.spelling.length ? `拼写 ${diff.spelling.length}` : "",
+    diff.wording.length ? `用词 ${diff.wording.length}` : "",
+    diff.missing.length ? `漏词 ${diff.missing.length}` : "",
+    diff.extra.length ? `多出 ${diff.extra.length}` : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <p className="mt-4 rounded-xl bg-orange-50 px-4 py-3 text-sm leading-6 text-orange-800">
+      <b>有差异（{parts}）。</b>对照高亮处看一眼原句，建议再默一次巩固。
+    </p>
+  );
+}
+
 export function ImitationRitual({ prompt, onDone }: { prompt: WritingPrompt; onDone: () => void }) {
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [recall, setRecall] = useState("");
   const [showTranslation, setShowTranslation] = useState(false);
+  const [peeking, setPeeking] = useState(false);
   const sentences = prompt.model?.sentences ?? [];
   const english = sentences.map((sentence) => sentence.english).join(" ");
   const translation = sentences.map((sentence) => sentence.translationZh).join(" ");
   const pattern = sentences.map((sentence) => sentence.pattern).join(" ");
   const stages = ["看示范", "默写", "对照", "仿写"];
+  const diff = useMemo(() => (step === 2 ? diffWords(recall, english) : null), [step, recall, english]);
+  const onlySpelling = !!diff && diff.spelling.length > 0 && diff.wording.length === 0 && diff.missing.length === 0 && diff.extra.length === 0;
+
+  // 默写阶段：按住 Ctrl / ⌘ 偷看原句，松开即隐藏
+  useEffect(() => {
+    if (step !== 1) return;
+    function down(e: KeyboardEvent) { if (e.key === "Control" || e.key === "Meta") setPeeking(true); }
+    function up(e: KeyboardEvent) { if (e.key === "Control" || e.key === "Meta") setPeeking(false); }
+    function hide() { setPeeking(false); }
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", hide);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", hide);
+    };
+  }, [step]);
+
+  // 快捷键：⏎ 前进一步，⇧⏎ 再默一次，⌘/Ctrl+⏎ 默写完对照（在输入框里也生效）
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Enter") return;
+      const target = e.target as HTMLElement | null;
+      const typing = target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
+      const onControl = !!target?.closest("button, summary, a, select");
+      if (step === 0 && !typing && !onControl) {
+        e.preventDefault();
+        setStep(1);
+      } else if (step === 1 && (e.metaKey || e.ctrlKey) && recall.trim()) {
+        e.preventDefault();
+        setPeeking(false);
+        setStep(2);
+      } else if (step === 2 && !typing && !onControl) {
+        e.preventDefault();
+        if (e.shiftKey) setStep(1);
+        else onDone();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [step, recall, onDone]);
 
   return (
     <div className="mt-4">
@@ -520,7 +664,7 @@ export function ImitationRitual({ prompt, onDone }: { prompt: WritingPrompt; onD
               {sentences.map((sentence, index) => <div key={index} className="rounded-xl bg-background p-4"><SentenceNotes sentence={sentence} /></div>)}
             </div>
           </details>
-          <button type="button" onClick={() => setStep(1)} className="mt-7 rounded-xl bg-foreground px-7 py-3 font-bold text-white">我记住了，开始默写 →</button>
+          <button type="button" onClick={() => setStep(1)} className="mt-7 rounded-xl bg-foreground px-7 py-3 font-bold text-white">我记住了，开始默写 →<kbd className="ml-2 rounded bg-white/15 px-1.5 py-0.5 text-xs font-bold">⏎</kbd></button>
         </section>
       )}
 
@@ -534,30 +678,38 @@ export function ImitationRitual({ prompt, onDone }: { prompt: WritingPrompt; onD
             <div className="mt-3 text-xs font-bold text-black/40">句型骨架</div>
             <code className="mt-1 block break-words text-accent">{pattern}</code>
           </div>
+          {peeking && (
+            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <div className="text-xs font-bold text-amber-700">偷看一眼 · 松开按键就藏起来</div>
+              <p className="mt-1 text-lg font-bold leading-8">{english}</p>
+            </div>
+          )}
           <textarea value={recall} onChange={(event) => setRecall(event.target.value)} maxLength={2000} rows={3} placeholder="在这里默写英文原句…" className="mt-4 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />
+          <p className="mt-2 text-xs text-black/40">按住 <kbd className="rounded border border-black/15 bg-white px-1">Ctrl</kbd> 或 <kbd className="rounded border border-black/15 bg-white px-1">⌘</kbd> 可偷看原句</p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
-            <button type="button" disabled={!recall.trim()} onClick={() => setStep(2)} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">写好了，对照原句</button>
+            <button type="button" disabled={!recall.trim()} onClick={() => setStep(2)} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">写好了，对照原句<kbd className="ml-2 rounded bg-white/15 px-1.5 py-0.5 text-xs font-bold">⌘⏎</kbd></button>
             <button type="button" onClick={() => setStep(0)} className="text-sm font-bold text-black/45 underline underline-offset-4">想不起来，回去再看一眼</button>
           </div>
         </section>
       )}
 
-      {step === 2 && (
+      {step === 2 && diff && (
         <section className="mt-4 rounded-2xl border border-accent/25 bg-white p-6 sm:p-8">
           <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Compare · 对照一下</div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl bg-background p-4">
               <div className="text-xs font-bold text-black/40">你默的</div>
-              <p className="mt-1 whitespace-pre-wrap leading-8">{recall}</p>
+              <p className="mt-1 leading-8"><RecallTokens diff={diff} /></p>
             </div>
             <div className="rounded-xl bg-background p-4">
               <div className="text-xs font-bold text-black/40">原句</div>
-              <p className="mt-1 font-bold leading-8">{english}</p>
+              <p className="mt-1 font-bold leading-8"><OriginalTokens text={english} diff={diff} /></p>
             </div>
           </div>
+          <CompareVerdict diff={diff} />
           <div className="mt-5 flex flex-wrap items-center gap-4">
-            <button type="button" onClick={onDone} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white">可以了，开始仿写 →</button>
-            <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold">差得有点多，再默一次</button>
+            <button type="button" onClick={onDone} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white">可以了，开始仿写 →<kbd className="ml-2 rounded bg-white/15 px-1.5 py-0.5 text-xs font-bold">⏎</kbd></button>
+            <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold">{onlySpelling ? "再默一次，巩固拼写" : "还有差距，再默一次"}<kbd className="ml-2 rounded bg-black/5 px-1.5 py-0.5 text-xs font-bold">⇧⏎</kbd></button>
           </div>
         </section>
       )}
@@ -600,8 +752,8 @@ function Workspace(props: { session: Session; activeTask: Task | null; latestAtt
           </div>
         )}
         {props.hint && <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm"><div className="font-bold text-blue-700">本级帮助</div><pre className="mt-2 whitespace-pre-wrap font-sans text-blue-900">{Object.entries(props.hint).map(([key, value]) => `${key === "keywords" ? "关键词" : key === "frame" ? "句型骨架" : key === "modelAnswer" ? "示范" : "分步重建"}：${Array.isArray(value) ? value.join(" · ") : String(value)}`).join("\n")}</pre>{"modelAnswer" in props.hint && <button onClick={() => props.setShowExample(false)} className="mt-2 font-bold underline">隐藏示范，开始回忆重写</button>}</div>}
-        <textarea value={props.draft} onChange={(e) => props.setDraft(e.target.value)} maxLength={5000} rows={activeTask.type === "article" ? 10 : 5} placeholder="在这里写英文…" className="mt-5 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />
-        <div className="mt-3 flex flex-wrap gap-3"><button disabled={props.busy || !props.draft.trim()} onClick={props.submit} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">{props.busy ? "DeepSeek 正在批改…" : activeTask.attempts.length ? "提交改写" : "提交批改"}</button><button disabled={props.busy} onClick={props.unlockHint} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold disabled:opacity-35">{activeTask.hintLevel === 0 ? "给我关键词" : activeTask.hintLevel === 1 ? "给我句型骨架" : "给我示范并分步重建"}</button></div>
+        <textarea value={props.draft} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!props.busy && props.draft.trim()) void props.submit(); } }} onChange={(e) => props.setDraft(e.target.value)} maxLength={5000} rows={activeTask.type === "article" ? 10 : 5} placeholder="在这里写英文…" className="mt-5 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />
+        <div className="mt-3 flex flex-wrap gap-3"><button disabled={props.busy || !props.draft.trim()} onClick={props.submit} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">{props.busy ? "DeepSeek 正在批改…" : activeTask.attempts.length ? "提交改写 ⌘⏎" : "提交批改 ⌘⏎"}</button><button disabled={props.busy} onClick={props.unlockHint} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold disabled:opacity-35">{activeTask.hintLevel === 0 ? "给我关键词" : activeTask.hintLevel === 1 ? "给我句型骨架" : "给我示范并分步重建"}</button></div>
         {props.error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{props.error}</div>}
         </>
         )}

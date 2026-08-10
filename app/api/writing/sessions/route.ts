@@ -52,7 +52,7 @@ export async function POST(req: Request) {
           userId: user.id,
           kind: "review",
           mode: "review",
-          title: `今日错点复练（${items.length}）`,
+          title: `今日错点复练（${prompts.length}）`,
           target: JSON.stringify({ memoryIds: items.map((item) => item.id) }),
           tasks: {
             create: prompts.map((prompt, index) => ({

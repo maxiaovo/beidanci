@@ -12,6 +12,7 @@ import {
   Student,
   UserCircle,
 } from "@phosphor-icons/react";
+import ActivityTicker from "@/components/ActivityTicker";
 
 interface Me {
   username: string;
@@ -76,7 +77,9 @@ export default function Nav() {
 
   return (
     <>
-      <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-black/5 bg-white/60 backdrop-blur sticky top-0 z-40">
+      <header className="border-b border-black/5 bg-white/60 backdrop-blur sticky top-0 z-40">
+        {me && <ActivityTicker />}
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3">
         <Link href="/" className="font-bold text-lg tracking-wide flex items-center gap-2 shrink-0">
           {site.hasSiteIcon ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -153,6 +156,7 @@ export default function Nav() {
           ) : (
             <Link href="/login" className="text-sm text-foreground/70">登录</Link>
           )}
+        </div>
         </div>
       </header>
 

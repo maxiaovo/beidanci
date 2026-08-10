@@ -108,8 +108,9 @@ export async function generateReviewPrompts(
     { role: "system", content: system },
     { role: "user", content: JSON.stringify({ items, context }) },
   ], (value) => {
-    if (!Array.isArray(value) || value.length !== items.length) throw new Error("复练题数量不符");
-    return value.map((raw, index) => {
+    // 模型偶尔返回的条数与错点数不一致：容错处理，有几条用几条（缺漏的错点会留到下次复练）
+    if (!Array.isArray(value) || value.length === 0) throw new Error("复练题数量不符");
+    return value.slice(0, items.length).map((raw, index) => {
       if (!raw || typeof raw !== "object") throw new Error("复练题格式错误");
       const item = raw as Record<string, unknown>;
       if (typeof item.instruction !== "string") throw new Error("复练题缺少要求");
