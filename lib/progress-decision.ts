@@ -23,6 +23,7 @@ export function decideProgress({
   result,
   strict,
   hadFailure,
+  recoveryPass = false,
   now = new Date(),
 }: {
   existing: ExistingProgress | null;
@@ -30,12 +31,24 @@ export function decideProgress({
   result: ProgressResult;
   strict: boolean;
   hadFailure: boolean;
+  // 补考中间次（连对第 1、2 次）：只留学习记录，不推进任何进度；
+  // 第 3 次连对由客户端按普通 correct 上报，走既有晋级逻辑
+  recoveryPass?: boolean;
   now?: Date;
 }): ProgressDecision {
   const correct = result === "correct";
   const currentStage = existing?.stage ?? 0;
   let spellPassed = existing?.spellPassed ?? false;
   let choicePassed = existing?.choicePassed ?? false;
+
+  if (recoveryPass && correct && mode.startsWith("check")) {
+    return {
+      stage: currentStage,
+      nextReviewAt: existing?.nextReviewAt ?? nextReviewDate(0, now),
+      spellPassed,
+      choicePassed,
+    };
+  }
 
   if (strict) {
     if (!correct) {

@@ -19,6 +19,18 @@ function hasAdjacentDuplicate<T extends { id: string }>(tasks: ReviewTask<T>[]) 
 }
 
 /**
+ * 把补考题随机插入 fromIdx 之后的剩余队列，至少隔 1 题再出现
+ * （避免刚作答完立刻重考同一个词）；剩余不足时追加到末尾。
+ */
+export function insertAtRandomSpot<T>(tasks: T[], task: T, fromIdx: number, random: () => number = Math.random): T[] {
+  const result = [...tasks];
+  const min = Math.min(fromIdx + 2, result.length);
+  const pos = min + Math.floor(random() * (result.length - min + 1));
+  result.splice(pos, 0, task);
+  return result;
+}
+
+/**
  * Builds the whole review queue before the session begins.
  * Strict review includes both task types, globally interleaves them, and keeps
  * the same word apart whenever the queue contains at least two words.

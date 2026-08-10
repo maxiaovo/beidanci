@@ -6,7 +6,8 @@ import Link from "next/link";
 import { playAudio, playDing, playBuzz, postProgress, preloadAudio } from "@/lib/client";
 import FitWord from "@/components/FitWord";
 import { DEFAULT_APPEARANCE, type LearnAppearance } from "@/lib/appearance";
-import { buildReviewTasks, type ReviewTask } from "@/lib/review-tasks";
+import { buildReviewTasks, insertAtRandomSpot, type ReviewTask } from "@/lib/review-tasks";
+import { initialRecovery, onCorrect, onWrong, type WordRecovery } from "@/lib/review-recovery";
 
 interface QuizWord {
   id: string;
@@ -23,7 +24,8 @@ interface QuizWord {
 type QuizMode = "spell" | "choice";
 
 // 一道检查题：强检查时每个词拆成拼写、选择两题，再在整场队列中交错打散。
-type Task = ReviewTask<QuizWord>;
+// recoveryStreak：补考题标记，值为本次出现时已累计的连对数（用于"连对 x/3"展示）
+type Task = ReviewTask<QuizWord> & { recoveryStreak?: number };
 
 export function RecallActions({
   revealed,
@@ -93,7 +95,7 @@ function CheckInner() {
   const router = useRouter();
 
   const [words, setWords] = useState<QuizWord[]>([]); // 本轮要检查的词
-  const [tasks, setTasks] = useState<Task[]>([]); // 本轮打散后的题目队列
+  const [tasks, setTasks] = useState<Task[]>([]); // 打散后的题目队列（答错会随机重插补考题，长度动态增长）
   const [distractors, setDistractors] = useState<string[]>([]);
   const [idx, setIdx] = useState(0);
   const [quizMode, setQuizMode] = useState<QuizMode | null>(null); // 非强检查的本轮模式
@@ -104,9 +106,8 @@ function CheckInner() {
   const [skipped, setSkipped] = useState(false); // 用户强行跳过了本次复习
   const [allowSkip, setAllowSkip] = useState(false);
   const [appearance, setAppearance] = useState<LearnAppearance>(DEFAULT_APPEARANCE); // 全局外观（卡片宽度等）
-  const [round, setRound] = useState(1); // 复习循环轮次：未通过的词进入下一轮
-  const failedRef = useRef<Set<string>>(new Set()); // 本轮未通过（答错/放弃过）的词
-  const lapsedRef = useRef<Set<string>>(new Set()); // 整场复习中曾失败的词，纠正后也不升级
+  const recoveryRef = useRef<Map<string, WordRecovery>>(new Map()); // 复习模式：每词的补考状态（连对进度）
+  const lapsedRef = useRef<Set<string>>(new Set()); // 自由练习：曾失败的词，纠正后也不升级
 
   // 拼写题状态
   const [input, setInput] = useState("");
@@ -123,13 +124,13 @@ function CheckInner() {
   const word = task?.word;
   const mode = task?.mode ?? quizMode ?? "spell";
 
-  // 开启一轮检查：打散题目、重置进度与未通过记录
+  // 开启一轮检查：打散题目、重置进度与补考记录
   const startRound = useCallback(
     (ws: QuizWord[], isStrict: boolean, m: QuizMode) => {
       setWords(ws);
       setTasks(buildReviewTasks(ws, isStrict, m));
       setIdx(0);
-      failedRef.current = new Set();
+      recoveryRef.current = new Map();
       // 重置题目状态，避免上一轮的残留带到新一轮
       setInput("");
       setSpellState("idle");
@@ -195,7 +196,7 @@ function CheckInner() {
   const options = useMemo(() => {
     if (!task || task.mode !== "choice") return [];
     const w = task.word;
-    const seed = `${w.id}:${round}:${idx}`;
+    const seed = `${w.id}:${idx}`;
     const rank = (value: string) => {
       let hash = 2166136261;
       for (const char of `${seed}:${value}`) {
@@ -207,16 +208,52 @@ function CheckInner() {
     const pool = [...new Set(distractors.filter((m) => m && m !== w.meaningCn))];
     const picks = pool.sort((a, b) => rank(a) - rank(b)).slice(0, 3);
     return [...picks, w.meaningCn].sort((a, b) => rank(`answer:${a}`) - rank(`answer:${b}`));
-  }, [task, distractors, round, idx]);
+  }, [task, distractors, idx]);
 
   useEffect(() => {
     if (mode === "spell") inputRef.current?.focus();
   }, [mode, idx]);
 
-  const markFailed = useCallback((wordId: string) => {
-    failedRef.current.add(wordId);
-    lapsedRef.current.add(wordId);
-  }, []);
+  // 复习模式：答错/放弃 → 该题型需连对 3 次，补考题随机重插进剩余队列
+  const applyRecoveryWrong = useCallback(
+    (w: QuizWord, m: QuizMode) => {
+      const state = recoveryRef.current.get(w.id) ?? initialRecovery(strict, quizMode ?? "spell");
+      const { next: nextState, requeue } = onWrong(state, m, strict);
+      recoveryRef.current.set(w.id, nextState);
+      setTasks((prev) =>
+        requeue.reduce(
+          (acc, tm) =>
+            insertAtRandomSpot(
+              acc,
+              // 强检查下被重置补回的题型只需过 1 次，不显示连对进度
+              { word: w, mode: tm, recoveryStreak: nextState[tm].required === 3 ? 0 : undefined },
+              idx,
+            ),
+          prev,
+        ),
+      );
+    },
+    [strict, quizMode, idx],
+  );
+
+  // 复习模式：答对 → 累计连对数；补考中间次只留记录不晋级，满 3 次按普通 correct 上报晋级
+  const reportReviewCorrect = useCallback(
+    async (w: QuizWord, m: QuizMode) => {
+      const state = recoveryRef.current.get(w.id) ?? initialRecovery(strict, quizMode ?? "spell");
+      const { next: nextState, report } = onCorrect(state, m);
+      recoveryRef.current.set(w.id, nextState);
+      const progressMode = m === "spell" ? "check-spell" : "check-choice";
+      if (report === "recoveryPass") {
+        await postProgress(w.id, progressMode, "correct", { recoveryPass: true });
+        setTasks((prev) =>
+          insertAtRandomSpot(prev, { word: w, mode: m, recoveryStreak: nextState[m].streak }, idx),
+        );
+      } else {
+        await postProgress(w.id, progressMode, "correct");
+      }
+    },
+    [strict, quizMode, idx],
+  );
 
   const next = useCallback(async () => {
     if (idx + 1 < tasks.length) {
@@ -228,31 +265,21 @@ function CheckInner() {
       setChoiceAnswered(false);
       return;
     }
-    // 本轮结束
+    // 本轮结束（答错的词已在本轮内补考通过，不存在遗留失败词）
     if (isReview) {
-      // 复习：未通过的词循环再来一轮，直到全部通过
-      const failed = failedRef.current;
-      if (failed.size > 0) {
-        const retryWords = words.filter((w) => failed.has(w.id));
-        setRound((r) => r + 1);
-        startRound(retryWords, strict, quizMode ?? "spell");
-        return;
-      }
-      // 全部通过，重新拉取确认门禁已清
+      // 重新拉取确认门禁已清
       const r = await fetch("/api/session");
       const d = await r.json();
       if (d.reviewsCleared) {
         setReviewCleared(true);
       } else {
         // 保底：仍有到期词（如之前跳过累积下来的），继续新一轮
-        setRound((r2) => r2 + 1);
         startRound(d.reviews, strict, quizMode ?? "spell");
-        return;
       }
       return;
     }
     setFinished(true);
-  }, [idx, tasks.length, isReview, words, strict, quizMode, startRound]);
+  }, [idx, tasks.length, isReview, strict, quizMode, startRound]);
 
   // 跳过复习：留痕（家长会看到），未复习的词仍会累积到下次复习
   async function skipReview() {
@@ -268,24 +295,29 @@ function CheckInner() {
     if (answer === word.text.toLowerCase()) {
       playDing();
       setSpellState("correct");
-      await postProgress(word.id, "check-spell", "correct", { hadFailure: lapsedRef.current.has(word.id) });
+      if (isReview) await reportReviewCorrect(word, "spell");
+      else await postProgress(word.id, "check-spell", "correct", { hadFailure: lapsedRef.current.has(word.id) });
       setTimeout(next, 700);
     } else {
       playBuzz();
       setSpellState("wrong");
       setShake((s) => s + 1);
-      markFailed(word.id);
       await postProgress(word.id, "check-spell", "wrong");
+      if (isReview) applyRecoveryWrong(word, "spell");
+      else lapsedRef.current.add(word.id);
+      // 答错不允许原地重打：展示答案，点"下一个"继续
+      setShowAnswer(true);
     }
   }
 
-  // 想不起来：两种题型都可直接揭晓答案，并按未通过记录。
+  // 想不起来：两种题型都可直接揭晓答案，并按答错处理（复习模式同样触发补考重插）。
   async function giveUp() {
     if (!word || showAnswer || spellState === "correct" || choiceAnswered) return;
     setShowAnswer(true);
     setChoiceAnswered(mode === "choice");
-    markFailed(word.id);
     await postProgress(word.id, mode === "spell" ? "check-spell" : "check-choice", "giveup");
+    if (isReview) applyRecoveryWrong(word, mode);
+    else lapsedRef.current.add(word.id);
   }
 
   // 选择题点击
@@ -294,13 +326,18 @@ function CheckInner() {
     if (opt === word.meaningCn) {
       setChoiceAnswered(true);
       playDing();
-      await postProgress(word.id, "check-choice", "correct", { hadFailure: lapsedRef.current.has(word.id) });
+      if (isReview) await reportReviewCorrect(word, "choice");
+      else await postProgress(word.id, "check-choice", "correct", { hadFailure: lapsedRef.current.has(word.id) });
       setTimeout(next, 500);
     } else {
       playBuzz();
       setWrongPicks((p) => [...p, opt]);
-      markFailed(word.id);
       await postProgress(word.id, "check-choice", "wrong");
+      if (isReview) applyRecoveryWrong(word, "choice");
+      else lapsedRef.current.add(word.id);
+      // 答错即揭示答案并进入下一题（补考已随机重插）
+      setChoiceAnswered(true);
+      setShowAnswer(true);
     }
   }
 
@@ -407,7 +444,9 @@ function CheckInner() {
         <span>
           {isReview ? "📅 复习检查" : "💪 自由练习"} ·{" "}
           {strict ? `强检查 ${mode === "spell" ? "拼写" : "选择"}` : mode === "spell" ? "拼写" : "选择"}
-          {isReview && round > 1 && <span className="text-orange-500"> · 第 {round} 轮（未通过循环复习）</span>}
+          {task?.recoveryStreak !== undefined && (
+            <span className="text-orange-500"> · 补考 · 连对 {task.recoveryStreak}/3</span>
+          )}
         </span>
         <span>{idx + 1} / {tasks.length}</span>
       </div>

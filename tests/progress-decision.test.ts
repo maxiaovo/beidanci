@@ -84,3 +84,62 @@ test("learn mode still advances normally", () => {
   });
   assert.equal(decision.stage, 4);
 });
+
+test("a recovery pass keeps all progress untouched", () => {
+  const failed = { ...existing, stage: 0, nextReviewAt: new Date("2026-08-02T00:10:00.000Z") };
+  const decision = decideProgress({
+    existing: failed,
+    mode: "check-spell",
+    result: "correct",
+    strict: false,
+    hadFailure: false,
+    recoveryPass: true,
+    now,
+  });
+  assert.equal(decision.stage, 0);
+  assert.equal(decision.nextReviewAt.getTime(), failed.nextReviewAt.getTime());
+  assert.equal(decision.spellPassed, false);
+  assert.equal(decision.choicePassed, false);
+});
+
+test("the third consecutive recovery pass reports as a plain correct and advances from stage zero", () => {
+  const failed = { ...existing, stage: 0 };
+  const decision = decideProgress({
+    existing: failed,
+    mode: "check-spell",
+    result: "correct",
+    strict: false,
+    hadFailure: false,
+    now,
+  });
+  assert.equal(decision.stage, 1);
+});
+
+test("a recovery pass does not touch strict-mode passed flags", () => {
+  const partial = { ...existing, stage: 0, spellPassed: true, choicePassed: false };
+  const decision = decideProgress({
+    existing: partial,
+    mode: "check-choice",
+    result: "correct",
+    strict: true,
+    hadFailure: false,
+    recoveryPass: true,
+    now,
+  });
+  assert.equal(decision.stage, 0);
+  assert.equal(decision.spellPassed, true);
+  assert.equal(decision.choicePassed, false);
+});
+
+test("recoveryPass with a wrong result falls through to the normal failure path", () => {
+  const decision = decideProgress({
+    existing,
+    mode: "check-spell",
+    result: "wrong",
+    strict: false,
+    hadFailure: false,
+    recoveryPass: true,
+    now,
+  });
+  assert.equal(decision.stage, 0);
+});

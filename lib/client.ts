@@ -146,11 +146,17 @@ export async function postProgress(
   wordId: string,
   mode: string,
   result: "correct" | "wrong" | "giveup",
-  options: { hadFailure?: boolean } = {},
+  options: { hadFailure?: boolean; recoveryPass?: boolean } = {},
 ) {
   await fetch("/api/progress", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ wordId, mode, result, hadFailure: options.hadFailure ?? false }),
+    body: JSON.stringify({
+      wordId,
+      mode,
+      result,
+      hadFailure: options.hadFailure ?? false,
+      recoveryPass: options.recoveryPass ?? false,
+    }),
   });
 }

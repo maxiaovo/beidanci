@@ -11,10 +11,16 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
   if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
-  const { wordId, mode, result, hadFailure = false } = await req.json().catch(() => ({}));
+  const { wordId, mode, result, hadFailure = false, recoveryPass = false } = await req.json().catch(() => ({}));
   const validModes: ProgressMode[] = ["learn", "check-spell", "check-choice"];
   const validResults: ProgressResult[] = ["correct", "wrong", "giveup"];
-  if (!wordId || !validModes.includes(mode) || !validResults.includes(result) || typeof hadFailure !== "boolean") {
+  if (
+    !wordId ||
+    !validModes.includes(mode) ||
+    !validResults.includes(result) ||
+    typeof hadFailure !== "boolean" ||
+    typeof recoveryPass !== "boolean"
+  ) {
     return NextResponse.json({ error: "参数错误" }, { status: 400 });
   }
 
@@ -27,7 +33,7 @@ export async function POST(req: Request) {
 
   const correct = result === "correct";
   const strict = (await isStrictCheck()) && mode.startsWith("check");
-  const decision = decideProgress({ existing, mode, result, strict, hadFailure });
+  const decision = decideProgress({ existing, mode, result, strict, hadFailure, recoveryPass });
 
   await prisma.wordProgress.upsert({
     where: { userId_wordId: { userId: user.id, wordId } },
