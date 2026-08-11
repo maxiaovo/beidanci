@@ -12,12 +12,14 @@ model User {
   username          String   @unique
   passwordHash      String
   role              String   @default("user") // admin | user | parent
+  parentCanLearn    Boolean  @default(false) // 学习型家长：兼具自己学习和监看孩子（仅 role=parent 有意义）
   avatarUrl         String? // 头像文件名，位于 data/avatars/
   parentId          String? // 孩子的家长（仅 role=user 使用）
   parent            User?    @relation("ParentChild", fields: [parentId], references: [id], onDelete: SetNull)
   children          User[]   @relation("ParentChild")
-  dailyNewTarget    Int      @default(20)
-  dailyReviewTarget Int      @default(100)
+  // null = 跟随全局默认（Setting 表 default_daily_new_target / default_daily_review_target）
+  dailyNewTarget    Int?
+  dailyReviewTarget Int?
   defaultCheckMode  String   @default("spell") // spell | choice
   recoveryCorrectTarget Int  @default(1) // 复习补考需答对次数（1-5，家长可设）
   cyclicRecovery      Boolean @default(false) // 循环补考：补考中再错则已累计次数清零重计

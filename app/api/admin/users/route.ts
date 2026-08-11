@@ -33,6 +33,7 @@ export async function GET() {
       id: u.id,
       username: u.username,
       role: u.role,
+      parentCanLearn: u.parentCanLearn,
       parentId: u.parentId,
       avatarUrl: u.avatarUrl,
       dailyNewTarget: u.dailyNewTarget,

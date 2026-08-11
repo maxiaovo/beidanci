@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 import { bookVisibleWhere, bookEnrolledWhere } from "@/lib/book-access";
-import { isAllowSkipReview, getLearnAppearance } from "@/lib/settings";
+import { isAllowSkipReview, getLearnAppearance, getEffectiveDailyTargets } from "@/lib/settings";
 import { isReviewGateOpen } from "@/lib/study-gate";
 
 function todayStart(): Date {
@@ -49,10 +49,11 @@ interface PlanOut {
 export async function GET(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const now = new Date();
   const start = todayStart();
+  const targets = await getEffectiveDailyTargets(user);
   const bookParam = new URL(req.url).searchParams.get("book");
 
   // 跳过语义：取今天最近一次跳过复习的时刻，跳过之前到期的词被赦免，之后新到期的仍拦截
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
   const dueProgress = await prisma.wordProgress.findMany({
     where: dueFilter,
     orderBy: { nextReviewAt: "asc" },
-    take: user.dailyReviewTarget,
+    take: targets.dailyReviewTarget,
     include: { word: { select: wordSelect } },
   });
   // 真实到期总数（不受 take 截断），供客户端展示积压
@@ -112,7 +113,7 @@ export async function GET(req: Request) {
   // 新词：复习门禁放开（到期队列空，或今日已完成复习配额）才下发
   let newWords: ReturnType<typeof serializeWord>[] = [];
   const plansOut: PlanOut[] = [];
-  const reviewsCleared = isReviewGateOpen(dueTotal, reviewsDoneToday, user.dailyReviewTarget);
+  const reviewsCleared = isReviewGateOpen(dueTotal, reviewsDoneToday, targets.dailyReviewTarget);
 
   const plans = await prisma.bookPlan.findMany({
     where: { userId: user.id },
@@ -183,7 +184,7 @@ export async function GET(req: Request) {
 
     // 兜底：用户主动选了一本没有每日计划的书，按每日新词目标下发该书的新词
     if (reviewsCleared && bookFilterId && !plans.some((p) => p.bookId === bookFilterId)) {
-      const remaining = Math.max(0, user.dailyNewTarget - learnedToday);
+      const remaining = Math.max(0, targets.dailyNewTarget - learnedToday);
       if (remaining > 0) {
         const fresh = await prisma.word.findMany({
           where: {
@@ -199,7 +200,7 @@ export async function GET(req: Request) {
     }
   } else if (reviewsCleared) {
     // 无计划：保持原全局 dailyNewTarget 行为，但只从"在学"的书里发新词
-    const remaining = Math.max(0, user.dailyNewTarget - learnedToday);
+    const remaining = Math.max(0, targets.dailyNewTarget - learnedToday);
     const bookBlocked = bookParam !== null && bookFilterId === null;
     if (remaining > 0 && !bookBlocked) {
       const fresh = await prisma.word.findMany({
@@ -233,8 +234,8 @@ export async function GET(req: Request) {
       dueTotal,
       reviewsDoneToday,
       learnedToday,
-      dailyNewTarget: user.dailyNewTarget,
-      dailyReviewTarget: user.dailyReviewTarget,
+      dailyNewTarget: targets.dailyNewTarget,
+      dailyReviewTarget: targets.dailyReviewTarget,
       recoveryCorrectTarget: user.recoveryCorrectTarget,
       cyclicRecovery: user.cyclicRecovery,
       defaultCheckMode: user.defaultCheckMode,

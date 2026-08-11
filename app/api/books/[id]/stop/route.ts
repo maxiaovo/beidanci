@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 import { requestStop } from "@/lib/import-runner";
 
 // 停止导入：排队中的书直接移出队列，处理中的书在当前 AI 调用结束后停止
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
   const { id } = await params;
 
   const book = await prisma.book.findUnique({ where: { id } });

@@ -48,10 +48,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const body = await req.json().catch(() => ({}));
   const data: Record<string, unknown> = {};
-  if (Number.isInteger(body.dailyNewTarget) && body.dailyNewTarget >= 1 && body.dailyNewTarget <= 200) {
+  // null 表示恢复全局默认
+  if (body.dailyNewTarget === null) {
+    data.dailyNewTarget = null;
+  } else if (Number.isInteger(body.dailyNewTarget) && body.dailyNewTarget >= 1 && body.dailyNewTarget <= 200) {
     data.dailyNewTarget = body.dailyNewTarget;
   }
-  if (Number.isInteger(body.dailyReviewTarget) && body.dailyReviewTarget >= 1 && body.dailyReviewTarget <= 500) {
+  if (body.dailyReviewTarget === null) {
+    data.dailyReviewTarget = null;
+  } else if (Number.isInteger(body.dailyReviewTarget) && body.dailyReviewTarget >= 1 && body.dailyReviewTarget <= 500) {
     data.dailyReviewTarget = body.dailyReviewTarget;
   }
   // 复习补考：答错后需累计答对 N 次才算过；循环补考 = 补考中再错则清零重计

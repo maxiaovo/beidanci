@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser, listChildUsers } from "@/lib/session";
+import { getEffectiveDailyTargets } from "@/lib/settings";
 import { getStudyStreak } from "@/lib/streak";
 
 // 家长：孩子列表 + 学习统计（管理员等价于拥有全部学习者）
@@ -26,12 +27,15 @@ export async function GET() {
     ]);
     // 连续学习天数
     const streak = await getStudyStreak(u.id);
+    const targets = await getEffectiveDailyTargets(u);
     result.push({
       id: u.id,
       username: u.username,
       avatarUrl: u.avatarUrl,
-      dailyNewTarget: u.dailyNewTarget,
-      dailyReviewTarget: u.dailyReviewTarget,
+      dailyNewTarget: targets.dailyNewTarget,
+      dailyReviewTarget: targets.dailyReviewTarget,
+      customDailyNewTarget: u.dailyNewTarget,
+      customDailyReviewTarget: u.dailyReviewTarget,
       recoveryCorrectTarget: u.recoveryCorrectTarget,
       cyclicRecovery: u.cyclicRecovery,
       todayLogs,

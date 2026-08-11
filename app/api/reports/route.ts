@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 import { createStudyReport, isReportRange, ReportError, serializeReport } from "@/lib/study-report";
 
 // 学习者本人：生成自己的学习报告（复习结束后触发）
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   if (!isReportRange(body.range)) {
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const reports = await prisma.studyReport.findMany({
     where: { userId: user.id },

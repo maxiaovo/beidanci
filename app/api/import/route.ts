@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 import { extractText, splitIntoUnits } from "@/lib/parsers";
 import { enqueueImport } from "@/lib/import-runner";
 import { saveBookCover, validateCover } from "@/lib/book-covers";
@@ -11,7 +11,7 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const form = await req.formData();
   const file = form.get("file") as File | null;

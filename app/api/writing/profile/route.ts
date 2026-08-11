@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 
 const LEVEL_KINDS = ["grade", "exam", "cefr", "custom", "unknown"];
 
 export async function PUT(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   if (!LEVEL_KINDS.includes(body.levelKind)) return NextResponse.json({ error: "请选择有效的水平类型" }, { status: 400 });
   const value = typeof body.levelValue === "string" ? body.levelValue.trim().slice(0, 200) : "";

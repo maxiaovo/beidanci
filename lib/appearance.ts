@@ -34,6 +34,32 @@ export function clampAppearanceValue(key: keyof LearnAppearance, value: unknown)
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+// ---- 检查（check）阶段外观 ----
+export interface CheckAppearance {
+  wordSizePx: number; // 检查页单词字号
+  optionSizePx: number; // 选项/按钮字号
+  cardWidthPct: number; // 卡片宽度（占页面宽度百分比）
+}
+
+export const DEFAULT_CHECK_APPEARANCE: CheckAppearance = {
+  wordSizePx: 72,
+  optionSizePx: 20,
+  cardWidthPct: 90,
+};
+
+export const CHECK_APPEARANCE_RANGES: Record<keyof CheckAppearance, [number, number]> = {
+  wordSizePx: [36, 120],
+  optionSizePx: [14, 36],
+  cardWidthPct: [40, 100],
+};
+
+export function clampCheckAppearanceValue(key: keyof CheckAppearance, value: unknown): number {
+  const [min, max] = CHECK_APPEARANCE_RANGES[key];
+  const n = typeof value === "number" && Number.isFinite(value) ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_CHECK_APPEARANCE[key];
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
 // px 字号转 CSS clamp()：窄屏按视口缩小，宽屏不超过设定值
 export function clampPx(px: number): string {
   return `clamp(${Math.round(px * 0.62)}px, ${(px / 10).toFixed(1)}vw + 0.5rem, ${px}px)`;

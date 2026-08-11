@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { playAudio, playDing, playBuzz, postProgress, preloadAudio } from "@/lib/client";
 import FitWord from "@/components/FitWord";
-import { DEFAULT_APPEARANCE, type LearnAppearance } from "@/lib/appearance";
+import { DEFAULT_CHECK_APPEARANCE, clampPx, type CheckAppearance } from "@/lib/appearance";
 import { buildReviewTasks, insertAtRandomSpot, type ReviewTask } from "@/lib/review-tasks";
 import { initialRecovery, onCorrect, onWrong, type WordRecovery } from "@/lib/review-recovery";
 
@@ -126,7 +126,7 @@ function CheckInner() {
   const [reviewCleared, setReviewCleared] = useState(false);
   const [skipped, setSkipped] = useState(false); // 用户强行跳过了本次复习
   const [allowSkip, setAllowSkip] = useState(false);
-  const [appearance, setAppearance] = useState<LearnAppearance>(DEFAULT_APPEARANCE); // 全局外观（卡片宽度等）
+  const [appearance, setAppearance] = useState<CheckAppearance>(DEFAULT_CHECK_APPEARANCE); // 检查页全局外观（卡片宽度、字号等）
   const recoveryRef = useRef<Map<string, WordRecovery>>(new Map()); // 复习模式：每词的补考状态
   const lapsedRef = useRef<Set<string>>(new Set()); // 自由练习：曾失败的词，纠正后也不升级
   const [initialTotal, setInitialTotal] = useState(0); // 本轮初始题数（进度条分母，不随补考增长）
@@ -248,12 +248,12 @@ function CheckInner() {
   );
 
   const load = useCallback(async () => {
-    // 站点配置（强检查开关、全局外观）
+    // 站点配置（强检查开关、检查页全局外观）
     const c = await fetch("/api/config");
     const cfg = c.ok ? await c.json() : {};
     const isStrict = !!cfg.strictCheck;
     setStrict(isStrict);
-    setAppearance({ ...DEFAULT_APPEARANCE, ...(cfg.appearance ?? {}) });
+    setAppearance({ ...DEFAULT_CHECK_APPEARANCE, ...(cfg.checkAppearance ?? {}) });
 
     if (isReview) {
       const r = await fetch("/api/session");
@@ -707,13 +707,14 @@ function CheckInner() {
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
-                  className={`w-full text-center text-3xl font-bold border-b-4 outline-none py-2 bg-transparent transition-colors ${
+                  className={`w-full text-center font-bold border-b-4 outline-none py-2 bg-transparent transition-colors ${
                     spellState === "correct"
                       ? "text-green-500 border-green-400"
                       : spellState === "wrong"
                         ? "text-red-500 border-red-400"
                         : "border-black/15 focus:border-accent"
                   }`}
+                  style={{ fontSize: clampPx(appearance.optionSizePx) }}
                 />
               </div>
             )}
@@ -725,7 +726,7 @@ function CheckInner() {
                 onClick={() => playAudio(word.audioWord ?? null)}
                 className="font-bold hover:opacity-70 cursor-pointer max-w-full"
               >
-                <FitWord text={word.text} sizePx={48} />
+                <FitWord text={word.text} sizePx={appearance.wordSizePx} />
               </button>
             </div>
             <div className="text-black/40">{word.phonetic}</div>
@@ -738,11 +739,12 @@ function CheckInner() {
                       key={opt}
                       disabled={isWrong || choiceAnswered}
                       onClick={() => pick(opt)}
-                      className={`rounded-xl border px-4 py-3 text-lg transition-colors ${
+                      className={`rounded-xl border px-4 py-3 transition-colors ${
                         isWrong
                           ? "border-red-300 text-red-400 bg-red-50 line-through"
                           : "border-black/10 hover:border-accent hover:bg-accent/20"
                       }`}
+                      style={{ fontSize: clampPx(appearance.optionSizePx) }}
                     >
                       {opt}
                     </button>

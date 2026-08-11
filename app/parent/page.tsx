@@ -92,6 +92,14 @@ export default function ParentPage() {
 
   useEffect(load, [load]);
 
+  // 孩子列表变化后，若未选中或选中的孩子已不存在，自动选中第一个（配合顶部孩子标签页）
+  useEffect(() => {
+    if (children && children.length > 0 && (!selected || !children.some((c) => c.id === selected.id))) {
+      selectChild(children[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [children]);
+
   const loadMessages = useCallback((userId: string) => {
     if (!userId) {
       setMsgList([]);
@@ -199,6 +207,33 @@ export default function ParentPage() {
 
   return (
     <div className="max-w-[1440px] mx-auto p-6 lg:px-10 flex flex-col gap-6">
+      {/* 多个孩子时，顶部孩子名标签页切换；下方详情随选中孩子刷新 */}
+      {children.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {children.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => selectChild(u)}
+              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors ${
+                selected?.id === u.id
+                  ? "bg-foreground text-white font-bold"
+                  : "bg-white border border-black/10 text-black/60 hover:border-accent/40 hover:text-accent"
+              }`}
+            >
+              {u.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`/api/avatars/${u.avatarUrl}`} alt="" className="w-5 h-5 rounded-full object-cover" />
+              ) : (
+                <span className={`w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-bold ${selected?.id === u.id ? "bg-white/20 text-white" : "bg-accent text-white"}`}>
+                  {u.username.slice(0, 1).toUpperCase()}
+                </span>
+              )}
+              {u.username}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex gap-6 flex-wrap">
         {/* 孩子列表 */}
         <section className="flex-1 min-w-72">

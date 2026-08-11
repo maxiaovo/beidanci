@@ -2,11 +2,14 @@
 import { prisma } from "./db";
 import {
   DEFAULT_APPEARANCE,
+  DEFAULT_CHECK_APPEARANCE,
   clampAppearanceValue,
+  clampCheckAppearanceValue,
+  type CheckAppearance,
   type LearnAppearance,
 } from "./appearance";
 
-export type { LearnAppearance };
+export type { CheckAppearance, LearnAppearance };
 
 export async function getSetting(key: string, fallback = ""): Promise<string> {
   const row = await prisma.setting.findUnique({ where: { key } });
@@ -54,6 +57,53 @@ export async function getLearnAppearance(): Promise<LearnAppearance> {
     out[field] = clampAppearanceValue(field, s[settingKey]);
   }
   return out;
+}
+
+// ---- 检查页外观（全局，管理员统一配置）----
+export const CHECK_APPEARANCE_SETTING_KEYS: Record<keyof CheckAppearance, string> = {
+  wordSizePx: "check_word_size_px",
+  optionSizePx: "check_option_size_px",
+  cardWidthPct: "check_card_width_pct",
+};
+
+export async function getCheckAppearance(): Promise<CheckAppearance> {
+  const keys = Object.values(CHECK_APPEARANCE_SETTING_KEYS);
+  const rows = await prisma.setting.findMany({ where: { key: { in: keys } } });
+  const s = Object.fromEntries(rows.map((r) => [r.key, r.value as string]));
+  const out = { ...DEFAULT_CHECK_APPEARANCE };
+  for (const [field, settingKey] of Object.entries(CHECK_APPEARANCE_SETTING_KEYS) as [keyof CheckAppearance, string][]) {
+    out[field] = clampCheckAppearanceValue(field, s[settingKey]);
+  }
+  return out;
+}
+
+// ---- 全局每日任务默认值（用户字段为 null 时回落到这里）----
+export const DEFAULT_DAILY_NEW_TARGET = 20;
+export const DEFAULT_DAILY_REVIEW_TARGET = 100;
+
+export async function getDefaultDailyNewTarget(): Promise<number> {
+  const v = Number(await getSetting("default_daily_new_target"));
+  return Number.isFinite(v) && v >= 1 && v <= 200 ? Math.round(v) : DEFAULT_DAILY_NEW_TARGET;
+}
+
+export async function getDefaultDailyReviewTarget(): Promise<number> {
+  const v = Number(await getSetting("default_daily_review_target"));
+  return Number.isFinite(v) && v >= 1 && v <= 500 ? Math.round(v) : DEFAULT_DAILY_REVIEW_TARGET;
+}
+
+// 用户每日任务生效值：个人覆写 ?? 全局默认
+export async function getEffectiveDailyTargets(user: {
+  dailyNewTarget: number | null;
+  dailyReviewTarget: number | null;
+}): Promise<{ dailyNewTarget: number; dailyReviewTarget: number }> {
+  const [defNew, defReview] = await Promise.all([
+    getDefaultDailyNewTarget(),
+    getDefaultDailyReviewTarget(),
+  ]);
+  return {
+    dailyNewTarget: user.dailyNewTarget ?? defNew,
+    dailyReviewTarget: user.dailyReviewTarget ?? defReview,
+  };
 }
 
 // ---- 站点信息 ----

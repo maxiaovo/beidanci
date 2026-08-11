@@ -1,27 +1,21 @@
 import { NextResponse } from "next/server";
 import { AuthError, requireAdmin } from "@/lib/session";
-import { getAIConfig, getTTSConfig, getSiteTitle, isRegistrationOpen, isStrictCheck, isAllowSkipReview, getLearnAppearance, setSetting, APPEARANCE_SETTING_KEYS, type LearnAppearance } from "@/lib/settings";
-import { clampAppearanceValue } from "@/lib/appearance";
+import { getAIConfig, getTTSConfig, getSiteTitle, isRegistrationOpen, isStrictCheck, isAllowSkipReview, getLearnAppearance, getCheckAppearance, getDefaultDailyNewTarget, getDefaultDailyReviewTarget, setSetting, APPEARANCE_SETTING_KEYS, CHECK_APPEARANCE_SETTING_KEYS, type CheckAppearance, type LearnAppearance } from "@/lib/settings";
+import { clampAppearanceValue, clampCheckAppearanceValue } from "@/lib/appearance";
 import { findSiteIcon } from "@/lib/site";
 
-// 管理员站点配置：注册开关 + 站点信息 + 强检查 + AI 解析配置 + TTS 语音配置
-export async function GET() {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    if (e instanceof AuthError) {
-      return NextResponse.json({ error: e.message }, { status: e.status });
-    }
-    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
-  }
+async function configPayload() {
   const [ai, tts] = await Promise.all([getAIConfig(), getTTSConfig()]);
-  return NextResponse.json({
+  return {
     registrationOpen: await isRegistrationOpen(),
     strictCheck: await isStrictCheck(),
     allowSkipReview: await isAllowSkipReview(),
     siteTitle: await getSiteTitle(),
     hasSiteIcon: !!findSiteIcon(),
     learnAppearance: await getLearnAppearance(),
+    checkAppearance: await getCheckAppearance(),
+    defaultDailyNewTarget: await getDefaultDailyNewTarget(),
+    defaultDailyReviewTarget: await getDefaultDailyReviewTarget(),
     ai: {
       model: ai.model,
       baseUrl: ai.baseUrl,
@@ -31,7 +25,20 @@ export async function GET() {
       overridden: ai.overridden,
     },
     tts: { ...tts },
-  });
+  };
+}
+
+// 管理员站点配置：注册开关 + 站点信息 + 学习设置 + 外观 + AI 解析配置 + TTS 语音配置
+export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
+  }
+  return NextResponse.json(await configPayload());
 }
 
 export async function PATCH(req: Request) {
@@ -89,23 +96,23 @@ export async function PATCH(req: Request) {
     }
   }
 
-  const [ai, tts] = await Promise.all([getAIConfig(), getTTSConfig()]);
-  return NextResponse.json({
-    ok: true,
-    registrationOpen: await isRegistrationOpen(),
-    strictCheck: await isStrictCheck(),
-    allowSkipReview: await isAllowSkipReview(),
-    siteTitle: await getSiteTitle(),
-    hasSiteIcon: !!findSiteIcon(),
-    learnAppearance: await getLearnAppearance(),
-    ai: {
-      model: ai.model,
-      baseUrl: ai.baseUrl,
-      apiKey: ai.apiKey,
-      prompt: ai.prompt,
-      thinking: ai.thinking,
-      overridden: ai.overridden,
-    },
-    tts: { ...tts },
-  });
+  // 检查页外观
+  if (body.checkAppearance && typeof body.checkAppearance === "object") {
+    for (const [field, settingKey] of Object.entries(CHECK_APPEARANCE_SETTING_KEYS) as [keyof CheckAppearance, string][]) {
+      const v = body.checkAppearance[field];
+      if (typeof v === "number" && Number.isFinite(v)) {
+        await setSetting(settingKey, String(clampCheckAppearanceValue(field, v)));
+      }
+    }
+  }
+
+  // 全局每日任务默认值
+  if (Number.isInteger(body.defaultDailyNewTarget) && body.defaultDailyNewTarget >= 1 && body.defaultDailyNewTarget <= 200) {
+    await setSetting("default_daily_new_target", String(body.defaultDailyNewTarget));
+  }
+  if (Number.isInteger(body.defaultDailyReviewTarget) && body.defaultDailyReviewTarget >= 1 && body.defaultDailyReviewTarget <= 500) {
+    await setSetting("default_daily_review_target", String(body.defaultDailyReviewTarget));
+  }
+
+  return NextResponse.json({ ok: true, ...(await configPayload()) });
 }

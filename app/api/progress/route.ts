@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 import { isStrictCheck } from "@/lib/settings";
 import { bookVisibleWhere, bookEnrolledWhere } from "@/lib/book-access";
 import { decideProgress, type ProgressMode, type ProgressResult } from "@/lib/progress-decision";
@@ -15,7 +15,7 @@ import { decideProgress, type ProgressMode, type ProgressResult } from "@/lib/pr
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const {
     wordId,

@@ -78,9 +78,14 @@ export async function requireAdmin() {
   return user;
 }
 
-// 家长（parent）不参与学习：学习者接口用它拦截
+// 家长（parent）角色判定：绑定逻辑用它区分邀约方向
 export function isParent(user: { role: string }) {
   return user.role === "parent";
+}
+
+// 是否可参与学习：普通家长（parentCanLearn=false）被学习者接口拦截；学习型家长放行
+export function canLearn(user: { role: string; parentCanLearn?: boolean | null }) {
+  return user.role !== "parent" || !!user.parentCanLearn;
 }
 
 // 能否查看/管理某个孩子：管理员可以管所有人；家长只能管自己绑定的孩子

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { DeepSeekRequestError, withWritingAiLock } from "@/lib/deepseek-client";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 import { evaluateWriting } from "@/lib/writing-ai";
 import { needsLongerDiagnostic } from "@/lib/writing-assessment";
 import { getWritingContext, recalculateWritingProfile } from "@/lib/writing-data";
@@ -49,7 +49,7 @@ async function finishOrExtendSession(sessionId: string, taskOrder: number) {
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
   const { id } = await ctx.params;
   const body = await req.json().catch(() => ({}));
   const text = typeof body.text === "string" ? body.text.trim() : "";

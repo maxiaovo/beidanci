@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getSessionUser, isParent } from "@/lib/session";
+import { canLearn, getSessionUser } from "@/lib/session";
 import { bookVisibleWhere } from "@/lib/book-access";
 
 const SAMPLE_SIZE = 20;
@@ -28,7 +28,7 @@ const VISIBLE_SQL = `
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-  if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
+  if (!canLearn(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
   const masteredCutoff = BigInt(Date.now() + MASTERED_HORIZON_MS);
   const selectCols = `

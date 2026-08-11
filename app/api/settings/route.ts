@@ -11,14 +11,34 @@ export async function PATCH(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const data: Record<string, unknown> = {};
-  if (Number.isInteger(body.dailyNewTarget) && body.dailyNewTarget >= 1 && body.dailyNewTarget <= 200) {
+  // null 表示恢复全局默认
+  if (body.dailyNewTarget === null) {
+    data.dailyNewTarget = null;
+  } else if (Number.isInteger(body.dailyNewTarget) && body.dailyNewTarget >= 1 && body.dailyNewTarget <= 200) {
     data.dailyNewTarget = body.dailyNewTarget;
   }
-  if (Number.isInteger(body.dailyReviewTarget) && body.dailyReviewTarget >= 1 && body.dailyReviewTarget <= 500) {
+  if (body.dailyReviewTarget === null) {
+    data.dailyReviewTarget = null;
+  } else if (Number.isInteger(body.dailyReviewTarget) && body.dailyReviewTarget >= 1 && body.dailyReviewTarget <= 500) {
     data.dailyReviewTarget = body.dailyReviewTarget;
   }
   if (["spell", "choice"].includes(body.defaultCheckMode)) {
     data.defaultCheckMode = body.defaultCheckMode;
+  }
+
+  // 自助修改密码：需校验当前密码
+  if (typeof body.newPassword === "string") {
+    if (body.newPassword.length < 4) {
+      return NextResponse.json({ error: "新密码至少4位" }, { status: 400 });
+    }
+    const bcrypt = (await import("bcryptjs")).default;
+    if (
+      typeof body.currentPassword !== "string" ||
+      !bcrypt.compareSync(body.currentPassword, user.passwordHash)
+    ) {
+      return NextResponse.json({ error: "当前密码不正确" }, { status: 400 });
+    }
+    data.passwordHash = bcrypt.hashSync(body.newPassword, 10);
   }
 
   // 主题设置
