@@ -11,6 +11,7 @@ import {
   Copy,
   GearSix,
   ListBullets,
+  MapTrifold,
   PencilLine,
   Plus,
   Sparkle,
@@ -380,13 +381,24 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
-            <Link
-              href={todayHref}
-              className="dashboard-action inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl px-7 py-4 text-lg font-black shadow-lg transition hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4"
-            >
-              {todayAction}
-              <ArrowRight size={22} weight="bold" />
-            </Link>
+            <div className="flex flex-col gap-2.5">
+              <Link
+                href={todayHref}
+                className="dashboard-action inline-flex min-h-14 items-center justify-center gap-3 rounded-2xl px-7 py-4 text-lg font-black shadow-lg transition hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-4"
+              >
+                {todayAction}
+                <ArrowRight size={22} weight="bold" />
+              </Link>
+              {isWords && (
+                <Link
+                  href="/learning-guide"
+                  className="dashboard-hero-settings inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-4"
+                >
+                  <MapTrifold size={19} weight="duotone" />
+                  先了解这套学习方法
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </section>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: #F3EBFB; }
+  body {
+    width: 880px;
+    margin: 0 auto;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(160deg, #FFF6EC 0%, #FDF0E4 45%, #F3EBFB 100%);
+    padding: 56px 60px;
+    color: #3D3A36;
+  }
+  .header { text-align: center; margin-bottom: 44px; }
+  .header .badge {
+    display: inline-block; font-size: 15px; font-weight: 700; letter-spacing: 4px;
+    color: #B98A4E; background: #FBEEDB; border-radius: 999px; padding: 6px 18px; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 44px; font-weight: 900; letter-spacing: 1px; }
+  .header p { margin-top: 12px; font-size: 18px; color: #9A8F83; }
+
+  .card {
+    background: #fff; border-radius: 28px; padding: 34px 38px; margin-bottom: 30px;
+    box-shadow: 0 10px 30px rgba(190, 150, 90, 0.12);
+    position: relative;
+  }
+  .card .step-tag {
+    position: absolute; top: -18px; left: 34px;
+    font-size: 16px; font-weight: 800; color: #fff; border-radius: 999px; padding: 8px 20px;
+  }
+  .tag-orange { background: linear-gradient(135deg, #F5A45D, #EE8B3C); }
+  .tag-blue { background: linear-gradient(135deg, #6FA8F2, #4E86E8); }
+  .tag-purple { background: linear-gradient(135deg, #B493E8, #9674DC); }
+  .card h2 { font-size: 26px; font-weight: 900; margin: 6px 0 6px; }
+  .card .sub { font-size: 16px; color: #A2988C; margin-bottom: 22px; }
+
+  .flow { display: flex; align-items: stretch; gap: 10px; }
+  .node {
+    flex: 1; border-radius: 18px; padding: 16px 8px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .node .icon { font-size: 30px; line-height: 1; }
+  .node .name { font-size: 17px; font-weight: 800; }
+  .node .desc { font-size: 12.5px; color: #8D8478; line-height: 1.5; }
+  .arrow { align-self: center; font-size: 20px; color: #D8C9B4; font-weight: 900; }
+
+  .c1 { background: #FFF3E2; } .c2 { background: #FDE8E4; } .c3 { background: #EAF3FD; }
+  .c4 { background: #EFF9EC; } .c5 { background: #F4EDFC; }
+
+  .warn {
+    margin-top: 20px; border-radius: 16px; padding: 14px 20px; font-size: 15px; line-height: 1.7;
+    background: #FDF1EC; color: #C06A3B; font-weight: 600;
+  }
+  .warn b { font-weight: 900; }
+
+  .ladder { display: flex; align-items: flex-end; gap: 8px; margin-top: 6px; }
+  .rung {
+    flex: 1; border-radius: 12px 12px 6px 6px; text-align: center; color: #fff;
+    font-weight: 800; font-size: 14px; padding-top: 10px;
+    background: linear-gradient(180deg, #A8C8F5, #7FA8EA);
+  }
+  .rung .t { font-size: 11px; font-weight: 600; opacity: .85; margin-top: 2px; padding-bottom: 8px; }
+  .rung.final { background: linear-gradient(180deg, #F5C86E, #EEA93F); }
+  .ladder-note { display: flex; justify-content: space-between; margin-top: 12px; font-size: 14px; font-weight: 700; }
+  .up { color: #4C9A5B; } .down { color: #D06A5A; }
+
+  .footer { text-align: center; margin-top: 8px; font-size: 14px; color: #B4A897; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="badge">每 日 学 习 路 线</div>
+    <h1>单词这样学，记得牢</h1>
+    <p>先复习，再学新词；答错不怕，多练几次就通关</p>
+  </div>
+
+  <div class="card">
+    <div class="step-tag tag-orange">第一步 · 复习检查</div>
+    <h2>📅 先把到期的单词复习完</h2>
+    <div class="sub">打开学习页，先考昨天、上周学过的词 —— 复习通过才能解锁新词</div>
+    <div class="flow">
+      <div class="node c1"><div class="icon">✍️</div><div class="name">拼写题</div><div class="desc">看中文意思<br>写出英文单词</div></div>
+      <div class="arrow">或</div>
+      <div class="node c3"><div class="icon">🎯</div><div class="name">选择题</div><div class="desc">看英文单词<br>选出正确意思</div></div>
+    </div>
+    <div class="warn">💪 <b>答错了？这个词会当轮补考：</b>它会在后面的题目里随机再出现，<b>连续答对 3 次</b>才算真正过关。中途再错就重新数，别急，稳扎稳打！</div>
+  </div>
+
+  <div class="card">
+    <div class="step-tag tag-blue">第二步 · 新词学习</div>
+    <h2>🌱 每个新词走 5 小步</h2>
+    <div class="sub">跟着步骤一步步来，最后自测过了才算学会</div>
+    <div class="flow">
+      <div class="node c1"><div class="icon">👂</div><div class="name">认识</div><div class="desc">看单词<br>听发音</div></div>
+      <div class="arrow">→</div>
+      <div class="node c2"><div class="icon">🧩</div><div class="name">拆解</div><div class="desc">词根词缀<br>记忆小窍门</div></div>
+      <div class="arrow">→</div>
+      <div class="node c3"><div class="icon">📖</div><div class="name">语境</div><div class="desc">例句里<br>理解用法</div></div>
+      <div class="arrow">→</div>
+      <div class="node c4"><div class="icon">⌨️</div><div class="name">拼写</div><div class="desc">跟着字形<br>临摹输入</div></div>
+      <div class="arrow">→</div>
+      <div class="node c5"><div class="icon">✅</div><div class="name">自测</div><div class="desc">遮住英文<br>默写出来</div></div>
+    </div>
+    <div class="warn">🔁 <b>自测没通过？</b>这个词会排到队伍最后，<b>重新学一遍再测</b>，直到真正记住为止。</div>
+  </div>
+
+  <div class="card">
+    <div class="step-tag tag-purple">第三步 · 记忆小阶梯</div>
+    <h2>🪜 每答对一次，就往上爬一级</h2>
+    <div class="sub">答对了，下次复习的间隔越来越长；答错就回到起点重新来</div>
+    <div class="ladder">
+      <div class="rung" style="height:44px"><div>10分钟</div><div class="t">第1级</div></div>
+      <div class="rung" style="height:56px"><div>1天</div><div class="t">第2级</div></div>
+      <div class="rung" style="height:68px"><div>2天</div><div class="t">第3级</div></div>
+      <div class="rung" style="height:80px"><div>4天</div><div class="t">第4级</div></div>
+      <div class="rung" style="height:92px"><div>7天</div><div class="t">第5级</div></div>
+      <div class="rung" style="height:104px"><div>15天</div><div class="t">第6级</div></div>
+      <div class="rung" style="height:116px"><div>30天</div><div class="t">第7级</div></div>
+      <div class="rung" style="height:128px"><div>60天</div><div class="t">第8级</div></div>
+      <div class="rung final" style="height:142px"><div>🏆</div><div class="t">完全掌握</div></div>
+    </div>
+    <div class="ladder-note">
+      <span class="up">✔ 答对 → 升一级，更久之后再复习</span>
+      <span class="down">✘ 答错 → 回到第 1 级，10 分钟后再见</span>
+    </div>
+  </div>
+
+  <div class="footer">每天坚持一点点，单词越记越牢固 🌟</div>
+</body>
+</html>

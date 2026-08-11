@@ -391,6 +391,9 @@ function LearnInner() {
             />
             扩展模式（抄写例句）
           </label>
+          <Link href="/learning-guide" className="font-bold text-foreground/70 hover:text-foreground transition-colors">
+            查看学习路线
+          </Link>
           <Link href="/" className="hover:text-black transition-colors">
             ✕ 退出
           </Link>

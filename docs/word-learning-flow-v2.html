@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>单词学习完整路线</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; }
+    body {
+      color: #3d3a36;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: #fff8eb url("./word-learning-flow-v2-bg.png") center / 100% 100% no-repeat;
+      -webkit-font-smoothing: antialiased;
+    }
+    .poster { position: relative; width: 1080px; height: 1920px; }
+    .panel { position: absolute; }
+    .tag {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 42px;
+      color: white;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-shadow: 0 1px 2px rgba(0,0,0,.1);
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 42px; line-height: 1.12; font-weight: 950; letter-spacing: 1px; }
+    h2 { font-size: 29px; line-height: 1.2; font-weight: 950; }
+    .lead { margin-top: 9px; font-size: 17px; line-height: 1.55; color: #7f776d; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 15px;
+      line-height: 1.2;
+      font-weight: 800;
+    }
+    .mini-grid { display: grid; gap: 10px; }
+    .mini-card {
+      border-radius: 15px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,.84);
+      box-shadow: 0 5px 18px rgba(94,72,43,.07);
+      border: 1px solid rgba(140,112,71,.1);
+    }
+    .mini-card h3 { font-size: 18px; line-height: 1.25; font-weight: 900; }
+    .mini-card p { margin-top: 5px; font-size: 14px; line-height: 1.55; color: #6f685f; }
+    .em { color: #ce6f32; font-weight: 900; }
+    .blue { color: #3978c6; }
+    .green { color: #588f3d; }
+    .rose { color: #c85f58; }
+
+    /* 01 — 每日入口与复习 */
+    .tag-1 { left: 325px; top: 79px; width: 160px; }
+    .p1 { left: 315px; top: 130px; width: 682px; }
+    .p1 .eyebrow { color: #b77b2c; font-size: 16px; font-weight: 900; letter-spacing: 3px; margin-bottom: 5px; }
+    .p1 .route { grid-template-columns: 1fr 1fr; margin-top: 16px; }
+    .p1 .gate { background: rgba(255,245,225,.9); }
+    .p1 .quiz { background: rgba(236,246,255,.9); }
+    .p1 .repair {
+      margin-top: 10px;
+      border-radius: 14px;
+      padding: 10px 14px;
+      color: #9f4f28;
+      background: rgba(255,232,222,.92);
+      font-size: 14px;
+      line-height: 1.55;
+      font-weight: 700;
+    }
+    .p1 .tiny { margin-top: 8px; font-size: 13px; line-height: 1.45; color: #756d63; }
+
+    /* 02 — 五步学习 */
+    .tag-2 { left: 168px; top: 516px; width: 178px; }
+    .p2 { left: 175px; top: 563px; width: 825px; }
+    .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 128px; }
+    .step { text-align: center; padding: 0 5px; }
+    .step h3 { font-size: 18px; font-weight: 950; }
+    .step p { margin-top: 4px; font-size: 12px; line-height: 1.45; color: #716a62; }
+    .p2 .loop {
+      margin: 13px 8px 0;
+      border-radius: 14px;
+      padding: 9px 15px;
+      text-align: center;
+      color: #a0502b;
+      background: rgba(255,239,229,.9);
+      font-size: 14px;
+      line-height: 1.5;
+      font-weight: 750;
+    }
+
+    /* 03 — 复习阶梯 */
+    .tag-3 { left: 180px; top: 981px; width: 168px; }
+    .p3 { left: 175px; top: 1034px; width: 830px; }
+    .schedule {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 15px;
+      white-space: nowrap;
+    }
+    .stage {
+      min-width: 72px;
+      border-radius: 13px;
+      padding: 9px 8px;
+      text-align: center;
+      background: rgba(255,255,255,.88);
+      border: 1px solid rgba(80,140,55,.18);
+      box-shadow: 0 4px 12px rgba(67,112,43,.06);
+    }
+    .stage strong { display: block; font-size: 18px; color: #4f873a; }
+    .stage small { display: block; margin-top: 2px; font-size: 11px; color: #7d776e; }
+    .arr { color: #87af71; font-size: 18px; font-weight: 900; }
+    .master { background: rgba(255,242,198,.94); border-color: rgba(210,155,41,.24); }
+    .master strong { color: #b8791c; }
+    .rule-grid { grid-template-columns: 1.15fr .85fr; margin-top: 14px; }
+    .rule-grid .good { background: rgba(236,248,230,.92); }
+    .rule-grid .reset { background: rgba(255,235,230,.92); }
+    .rule-grid h3 { font-size: 16px; }
+    .rule-grid p { font-size: 13px; }
+    .p3 .note { margin-top: 9px; font-size: 12px; color: #716a62; line-height: 1.45; }
+
+    /* 04 — 家长陪伴 */
+    .tag-4 { left: 222px; top: 1451px; width: 184px; }
+    .p4 { left: 320px; top: 1510px; width: 680px; }
+    .parent-grid { grid-template-columns: repeat(3, 1fr); margin-top: 14px; }
+    .parent-grid .mini-card { padding: 11px 12px; }
+    .parent-grid h3 { font-size: 16px; }
+    .parent-grid p { font-size: 12px; }
+    .p4 .bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+      border-radius: 14px;
+      padding: 10px 13px;
+      background: rgba(255,243,240,.9);
+      font-size: 12px;
+      line-height: 1.45;
+      color: #6c655e;
+    }
+    .p4 .bottom strong { color: #ad564f; }
+    .version {
+      position: absolute;
+      right: 42px;
+      bottom: 17px;
+      font-size: 11px;
+      color: rgba(65,59,51,.48);
+      letter-spacing: .4px;
+    }
+  </style>
+</head>
+<body>
+  <main class="poster" aria-label="单词学习完整路线图">
+    <div class="tag tag-1">01 · 每日入口</div>
+    <section class="panel p1">
+      <div class="eyebrow">VOCABULARY LEARNING LOOP</div>
+      <h1>单词怎么学，为什么能记牢？</h1>
+      <p class="lead">系统每天先安排到期复习，再按词书计划下发新词；复习没清完，新词默认不解锁。</p>
+      <div class="mini-grid route">
+        <article class="mini-card gate">
+          <h3>📅 先过“到期复习”门禁</h3>
+          <p>按到期时间从早到晚出题，最多取当天复习上限。普通检查用默认的<strong>拼写或选择</strong>；强检查则每词两种题都要过，并交错出题。</p>
+        </article>
+        <article class="mini-card quiz">
+          <h3>✍️ 两种主动回忆</h3>
+          <p><strong>拼写：</strong>看中文＋词性，写英文。<br><strong>选择：</strong>看英文＋音标/发音，四选一中文释义。</p>
+        </article>
+      </div>
+      <div class="repair">答错或“想不起来” → 先显示答案，再把该题型随机插到后面（至少隔一题），<strong>连续答对 3 次</strong>才修复；中途再错，连对数清零。强检查中，另一题型若已过，也要再过 1 次。</div>
+      <p class="tiny">管理员允许时可跳过门禁，但会留下家长可见记录，未复习的词不会消失，而会继续累积。</p>
+    </section>
+
+    <div class="tag tag-2">02 · 新词五步</div>
+    <section class="panel p2">
+      <h2>每个新词都必须走完 5 步，最后自测通过才算学会</h2>
+      <p class="lead">学习队列来自所选词书：可按“每天固定词数”或“当前单元的几分之一”设置；未单独设计划时使用每日新词目标。</p>
+      <div class="steps">
+        <article class="step"><h3>1 认识</h3><p>看英文与音标<br>点击听单词发音</p></article>
+        <article class="step"><h3>2 拆解</h3><p>词根/前后缀<br>中文释义＋记忆法</p></article>
+        <article class="step"><h3>3 语境</h3><p>听 2 条例句<br>中英对照，高亮目标词</p></article>
+        <article class="step"><h3>4 拼写</h3><p>跟浅色字形输入<br>扩展模式再抄 2 例句</p></article>
+        <article class="step"><h3>5 自测</h3><p>只看中文＋词性<br>默写完整英文</p></article>
+      </div>
+      <div class="loop">自测正确 → 记录“已学”并进入下一词。答错或放弃 → 显示正确拼写和音标，排到本次队尾，<strong>从“认识”重新完整学一遍再测</strong>，直到通过。</div>
+    </section>
+
+    <div class="tag tag-3">03 · 记忆阶梯</div>
+    <section class="panel p3">
+      <h2>不是学一遍就结束，而是在越来越长的间隔里反复提取</h2>
+      <p class="lead">新词自测通过后，进入第 1 阶段；以后每次到期检查“一遍通过”，就向上晋一级。</p>
+      <div class="schedule" aria-label="复习间隔">
+        <div class="stage"><strong>1 天</strong><small>阶段 1</small></div><span class="arr">→</span>
+        <div class="stage"><strong>2 天</strong><small>阶段 2</small></div><span class="arr">→</span>
+        <div class="stage"><strong>4 天</strong><small>阶段 3</small></div><span class="arr">→</span>
+        <div class="stage"><strong>7 天</strong><small>阶段 4</small></div><span class="arr">→</span>
+        <div class="stage"><strong>15 天</strong><small>阶段 5</small></div><span class="arr">→</span>
+        <div class="stage"><strong>30 天</strong><small>阶段 6</small></div><span class="arr">→</span>
+        <div class="stage"><strong>60 天</strong><small>阶段 7</small></div><span class="arr">→</span>
+        <div class="stage master"><strong>掌握</strong><small>阶段 8</small></div>
+      </div>
+      <div class="mini-grid rule-grid">
+        <article class="mini-card good"><h3 class="green">✓ 一遍通过：升级</h3><p>复习间隔逐渐拉长，阶段 8 在词书里显示为“已掌握”。</p></article>
+        <article class="mini-card reset"><h3 class="rose">↺ 答错/放弃：重置</h3><p>先回到阶段 0（10 分钟起点）；本轮连对 3 次修复后回到阶段 1，1 天后再查。</p></article>
+      </div>
+      <p class="note">想额外加练可进入“自由练习”，自行选拼写或选择；它不会改变首页推荐的今日主任务顺序，但作答仍会留下学习记录。</p>
+    </section>
+
+    <div class="tag tag-4">04 · 家长陪伴</div>
+    <section class="panel p4">
+      <h2>家长不替孩子答题，但能看见过程、调节节奏、及时鼓励</h2>
+      <div class="mini-grid parent-grid">
+        <article class="mini-card">
+          <h3>📊 看进度</h3>
+          <p>今日/累计练习、正确率、待复习数、已学词数、连续学习天数，以及每个词的正确/错误/放弃记录。</p>
+        </article>
+        <article class="mini-card">
+          <h3>🎚️ 调任务</h3>
+          <p>为孩子设置每日新词目标（1–200）和每日复习上限（1–500）；跳过复习也会显示未完成数量。</p>
+        </article>
+        <article class="mini-card">
+          <h3>💬 给鼓励</h3>
+          <p>留言可设为开始学习时、学习 N 分钟后或学到第 N 个词时弹出，并设置有效期。</p>
+        </article>
+      </div>
+      <div class="bottom"><span><strong>家长账号没有学习权限</strong>，学习操作始终由孩子完成。</span><span>核心闭环：计划 → 复习 → 新学 → 自测 → 间隔复习 → 掌握</span></div>
+    </section>
+
+    <div class="version">依据 GitHub 最新 main：612e8ad · v0.24.0 · 2026-08-10</div>
+  </main>
+</body>
+</html>
