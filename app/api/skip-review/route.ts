@@ -14,23 +14,23 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const module = body?.module === "writing" ? "writing" : "words";
+  const skipModule = body?.module === "writing" ? "writing" : "words";
 
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const existing = await prisma.reviewSkip.findFirst({
-    where: { userId: user.id, module, createdAt: { gte: start } },
+    where: { userId: user.id, module: skipModule, createdAt: { gte: start } },
   });
   if (!existing) {
     // 记录跳过时的待复习数，便于家长后台查看；这些词/错点不会被清掉，会累积到下次复习
-    const count = module === "writing"
+    const count = skipModule === "writing"
       ? await prisma.writingMemoryItem.count({
           where: { userId: user.id, status: "active", nextReviewAt: { lte: new Date() } },
         })
       : await prisma.wordProgress.count({
           where: { userId: user.id, nextReviewAt: { lte: new Date() } },
         });
-    await prisma.reviewSkip.create({ data: { userId: user.id, module, count } });
+    await prisma.reviewSkip.create({ data: { userId: user.id, module: skipModule, count } });
   }
   return NextResponse.json({ ok: true });
 }
