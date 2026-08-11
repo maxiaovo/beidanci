@@ -217,11 +217,12 @@ export default function Dashboard() {
     setEnrollingId(null);
   };
 
-  // 移出学习：不删学习记录，重新加入后进度还在
+  // 移出学习：不删学习记录，重新加入后进度还在；长按书架卡片才会出现「移出」，且需两次确认
   const removeBook = async (bookId: string) => {
     const book = books.find((b) => b.id === bookId);
     if (!book) return;
-    if (!window.confirm(`移出「${book.name}」？\n\n移出后不再安排这本书的新词和每日计划；你已学单词的复习记录会保留，以后重新加入时进度还在。`)) return;
+    if (!window.confirm(`⚠️ 确定要移出「${book.name}」吗？\n\n移出后不再安排这本书的新词和每日计划；你已学单词的复习记录会保留，以后重新加入时进度还在。`)) return;
+    if (!window.confirm(`⚠️ 最后确认\n\n「${book.name}」将从你的书架移出，今日计划中属于这本书的部分也会取消。\n\n真的不再学这本书了吗？`)) return;
     const r = await fetch(`/api/books/${bookId}/enroll`, { method: "DELETE" });
     if (r.ok) {
       if (selectedBook === bookId) setSelectedBook(AUTO);
@@ -453,6 +454,7 @@ export default function Dashboard() {
                     id={effectiveSelected}
                     name={selectedName ?? ""}
                     hasCover={enrolledBooks.find((b) => b.id === effectiveSelected)?.hasCover ?? false}
+                    className="h-14 w-11"
                   />
                 )}
                 <span className="min-w-0">
@@ -490,7 +492,7 @@ export default function Dashboard() {
             <div className="mb-6">
               <div className="theme-section-eyebrow flex items-center gap-2 text-sm font-bold"><Sparkle size={18} weight="fill" /> 学习内容</div>
               <h2 className="mt-2 text-2xl font-black">我的单词书</h2>
-              <p className="mt-2 text-sm leading-6 text-black/48">点击卡片选择今天学哪本；想学的书用「添加单词书」加入，不学了可以随时移出（学习记录保留）。</p>
+              <p className="mt-2 text-sm leading-6 text-black/48">点击卡片选择今天学哪本；想学的书用「添加单词书」加入，不学了长按卡片可移出（学习记录保留）。</p>
             </div>
             {enrolledBooks.length === 0 && addableBooks.length === 0 ? (
               <div className="py-10 text-center text-black/40">

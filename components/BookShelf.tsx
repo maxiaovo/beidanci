@@ -1,7 +1,8 @@
 "use client";
 
+import { useRef, useState } from "react";
 import Image from "next/image";
-import { Books, Plus, X } from "@phosphor-icons/react";
+import { Books, Plus } from "@phosphor-icons/react";
 
 export interface ShelfBook {
   id: string;
@@ -36,9 +37,19 @@ function TextCover({ name, seed }: { name: string; seed: string }) {
   );
 }
 
-export function BookCoverThumb({ id, name, hasCover }: { id: string; name: string; hasCover: boolean }) {
+export function BookCoverThumb({
+  id,
+  name,
+  hasCover,
+  className = "h-20 w-14",
+}: {
+  id: string;
+  name: string;
+  hasCover: boolean;
+  className?: string;
+}) {
   return (
-    <span className="block h-20 w-14 shrink-0 overflow-hidden rounded-xl border border-black/8 bg-black/4 shadow-sm">
+    <span className={`block shrink-0 overflow-hidden rounded-xl border border-black/8 bg-black/4 shadow-sm ${className}`}>
       {hasCover ? (
         <Image
           src={`/api/books/${id}/cover`}
@@ -56,7 +67,10 @@ export function BookCoverThumb({ id, name, hasCover }: { id: string; name: strin
 }
 
 // 书架：只展示"在学"的单词书；点击卡片选为当前学习内容，
-// 卡片右上角可移出（保留学习记录），末尾虚线卡片打开"添加单词书"
+// 长按（鼠标或手指按住约 0.6 秒）弹出「移出」按钮（保留学习记录），
+// 末尾虚线卡片打开"添加单词书"
+const LONG_PRESS_MS = 600;
+
 export default function BookShelf({
   books,
   value,
@@ -70,8 +84,36 @@ export default function BookShelf({
   onRemove: (id: string) => void;
   onAdd: () => void;
 }) {
+  // 正在展示「移出」按钮的书；长按触发，点其他地方取消
+  const [removalId, setRemovalId] = useState<string | null>(null);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  const startPress = (book: ShelfBook) => {
+    if (book.auto) return;
+    cancelPress();
+    pressTimer.current = setTimeout(() => {
+      pressTimer.current = null;
+      setRemovalId(book.id);
+    }, LONG_PRESS_MS);
+  };
+
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {/* 「移出」待确认时，点击卡片以外的任意位置取消 */}
+      {removalId && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-40"
+          onClick={() => setRemovalId(null)}
+        />
+      )}
       {books.map((book) => {
         const selected = book.id === value;
         const progress = book.total > 0 ? Math.min(100, Math.round((book.learned / book.total) * 100)) : 0;
@@ -87,9 +129,22 @@ export default function BookShelf({
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 onChange(book.id);
+              } else if ((e.key === "Delete" || e.key === "Backspace") && !book.auto) {
+                e.preventDefault();
+                setRemovalId(book.id);
+              } else if (e.key === "Escape") {
+                setRemovalId(null);
               }
             }}
-            className={`group relative flex min-h-28 cursor-pointer items-center gap-4 rounded-3xl border p-4 text-left outline-none transition-[transform,box-shadow,border-color] duration-300 focus-visible:ring-4 focus-visible:ring-accent/30 ${
+            onPointerDown={() => startPress(book)}
+            onPointerUp={cancelPress}
+            onPointerLeave={cancelPress}
+            onPointerCancel={cancelPress}
+            onContextMenu={(e) => {
+              // 触屏长按会触发系统菜单，挡住以便弹出「移出」
+              if (!book.auto) e.preventDefault();
+            }}
+            className={`relative flex min-h-28 cursor-pointer select-none items-center gap-4 rounded-3xl border p-4 text-left outline-none transition-[transform,box-shadow,border-color] duration-300 focus-visible:ring-4 focus-visible:ring-accent/30 ${
               selected
                 ? "border-accent bg-white shadow-[0_18px_45px_rgba(83,70,156,0.18)]"
                 : "border-black/8 bg-white/85 shadow-[0_10px_26px_rgba(58,46,92,0.07)] hover:border-accent/45"
@@ -125,18 +180,17 @@ export default function BookShelf({
               </span>
             </span>
 
-            {!book.auto && (
+            {!book.auto && removalId === book.id && (
               <button
                 type="button"
-                aria-label={`移出 ${book.name}`}
-                title="移出学习（保留学习记录）"
                 onClick={(e) => {
                   e.stopPropagation();
+                  setRemovalId(null);
                   onRemove(book.id);
                 }}
-                className="absolute right-1.5 top-1.5 flex h-10 w-10 items-center justify-center rounded-full bg-black/5 text-black/35 opacity-40 transition hover:bg-red-50 hover:text-red-500 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+                className="absolute right-2 top-2 z-50 rounded-full bg-red-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg transition hover:bg-red-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-300"
               >
-                <X size={14} weight="bold" />
+                移出
               </button>
             )}
           </div>

@@ -14,6 +14,17 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: process.env.NEXT_SKIP_BUILD_TYPECHECK === "1",
   },
+  // HTML 页面禁止启发式缓存：浏览器必须每次向服务器再验证，
+  // 配合 /api/version 的版本检测，避免部署后仍展示旧缓存页面。
+  // _next/static 等带内容哈希的静态资源不受影响（规则已排除）。
+  async headers() {
+    return [
+      {
+        source: "/((?!_next/|api/|.*\\..*).*)",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

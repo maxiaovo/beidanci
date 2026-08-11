@@ -64,8 +64,10 @@ export default function ActivityTicker() {
   }, []);
 
   const list = items ?? [];
-  const liveCount = list.filter((item) => item.live).length;
-  const duration = Math.max(20, list.length * 6);
+  // 只有"正在学习"（30 分钟窗口内）的动态才滚动播报；无人学习时静态展示，不做无效滚动
+  const liveItems = list.filter((item) => item.live);
+  const liveCount = liveItems.length;
+  const duration = Math.max(20, liveItems.length * 6);
 
   return (
     <div className="relative flex h-[34px] items-stretch overflow-hidden border-b border-white/10 bg-gradient-to-r from-[#1c1430] via-[#2a1b4a] to-[#1c1430] text-xs text-white">
@@ -78,14 +80,16 @@ export default function ActivityTicker() {
       </div>
       {items === null ? (
         <div className="flex items-center px-4 text-white/40">正在同步学习动态…</div>
-      ) : list.length === 0 ? (
-        <div className="flex items-center px-4 text-white/60">还没人开始学习，来当第一个 ✨</div>
+      ) : liveCount === 0 ? (
+        <div className="flex items-center px-4 text-white/60">
+          {list.length > 0 ? `今天已有 ${list.length} 位成员学习过，现在没人在线` : "还没人开始学习，来当第一个 ✨"}
+        </div>
       ) : (
         <div className="ticker-mask relative flex-1 overflow-hidden">
           <div className="ticker-track absolute inset-y-0 flex items-center whitespace-nowrap" style={{ animationDuration: `${duration}s` }}>
             {[0, 1].map((copy) => (
               <div key={copy} aria-hidden={copy === 1} className="flex items-center gap-6 pr-6">
-                {list.map((item) => (
+                {liveItems.map((item) => (
                   <span key={`${item.userId}-${copy}`} className="flex items-center gap-6">
                     <TickerChip item={item} />
                     <span aria-hidden="true" className="text-white/25">✦</span>

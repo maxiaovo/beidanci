@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
+import VersionChecker from "@/components/VersionChecker";
 import { getSiteTitle } from "@/lib/settings";
 import { findSiteIcon } from "@/lib/site";
 import { getSessionUser } from "@/lib/session";
@@ -52,6 +53,7 @@ export default async function RootLayout({
       style={styleObjectFromVars(themeVars)}
     >
       <body className="min-h-full flex flex-col">
+        <VersionChecker />
         <Nav />
         <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
       </body>
