@@ -146,7 +146,7 @@ export async function postProgress(
   wordId: string,
   mode: string,
   result: "correct" | "wrong" | "giveup",
-  options: { hadFailure?: boolean; recoveryPass?: boolean } = {},
+  options: { hadFailure?: boolean; recoveryPass?: boolean; attempt?: string } = {},
 ) {
   await fetch("/api/progress", {
     method: "POST",
@@ -157,6 +157,7 @@ export async function postProgress(
       result,
       hadFailure: options.hadFailure ?? false,
       recoveryPass: options.recoveryPass ?? false,
+      attempt: options.attempt ?? null,
     }),
   });
 }

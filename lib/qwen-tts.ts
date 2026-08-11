@@ -7,6 +7,7 @@ import type { TTSConfig } from "./settings";
 export interface SynthesizeOpts {
   voice?: string;
   instruction?: string;
+  language?: string; // 语种，默认 English；中英混合内容（如学习报告朗读稿）传 "Auto"
   out?: { error?: string }; // 失败时回传原因，供管理端展示
 }
 
@@ -23,7 +24,7 @@ export async function synthesizeSpeech(
   const input: Record<string, unknown> = {
     text,
     voice,
-    language_type: "English", // 本应用只合成英语，显式指定语种提升发音质量
+    language_type: opts?.language || "English", // 默认英语；中英混合内容调用方传 "Auto"
   };
   // instruction 仅对 qwen3-tts-instruct-* 生效；qwen3-tts-flash 接受但不报错（被忽略）。
   // 按千问官方 HTTP 规范（platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-tts），

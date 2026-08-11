@@ -13,42 +13,50 @@ test("非强检查：一次答对即完成，上报 normal", () => {
   assert.equal(isCleared(next), true);
 });
 
-test("答错后需连对 3 次：前两次报 recoveryPass，第三次报 complete", () => {
-  let state = initialRecovery(false, "spell");
-  const wrong = onWrong(state, "spell", false);
-  state = wrong.next;
+test("默认补考 1 次：答错后补考一次，答对即过", () => {
+  const wrong = onWrong(initialRecovery(false, "spell"), "spell", false);
   assert.deepEqual(wrong.requeue, ["spell"]);
+  assert.equal(wrong.next.spell.required, 1);
+  assert.equal(wrong.next.spell.done, false);
+
+  const passed = onCorrect(wrong.next, "spell");
+  assert.equal(passed.report, "normal"); // required=1 时补考通过按普通 correct 上报
+  assert.equal(isCleared(passed.next), true);
+});
+
+test("补考 3 次（非循环）：中间次报 recoveryPass，第 3 次报 complete；中途答错不清零", () => {
+  let state = onWrong(initialRecovery(false, "spell"), "spell", false, 3, false).next;
   assert.equal(state.spell.required, 3);
-  assert.equal(state.spell.streak, 0);
-  assert.equal(state.spell.done, false);
 
   const first = answerCorrect(state, "spell");
   assert.equal(first.report, "recoveryPass");
-  assert.equal(first.next.spell.streak, 1);
-  assert.equal(isCleared(first.next), false);
+  assert.equal(first.next.spell.passed, 1);
 
-  const second = answerCorrect(first.next, "spell");
-  assert.equal(second.report, "recoveryPass");
-  assert.equal(second.next.spell.streak, 2);
-
-  const third = answerCorrect(second.next, "spell");
-  assert.equal(third.report, "complete");
-  assert.equal(third.next.spell.done, true);
-  assert.equal(isCleared(third.next), true);
-});
-
-test("补考中途再答错：连对数清零，重新要求 3 次", () => {
-  let state = initialRecovery(false, "spell");
-  state = onWrong(state, "spell", false).next;
-  state = answerCorrect(state, "spell").next; // streak 1
-  state = answerCorrect(state, "spell").next; // streak 2
-
-  const again = onWrong(state, "spell", false);
-  assert.equal(again.next.spell.streak, 0);
+  // 非循环：补考中途答错，已累计次数保留
+  const again = onWrong(first.next, "spell", false, 3, false);
+  assert.equal(again.next.spell.passed, 1);
   assert.equal(again.next.spell.required, 3);
   assert.deepEqual(again.requeue, ["spell"]);
 
-  // 重新连对 3 次才完成
+  state = again.next;
+  assert.equal(answerCorrect(state, "spell").report, "recoveryPass"); // passed 2
+  state = answerCorrect(state, "spell").next;
+  const done = answerCorrect(state, "spell"); // passed 3
+  assert.equal(done.report, "complete");
+  assert.equal(isCleared(done.next), true);
+});
+
+test("补考 3 次（循环）：补考中途答错，已累计次数清零重计", () => {
+  let state = onWrong(initialRecovery(false, "spell"), "spell", false, 3, true).next;
+  state = answerCorrect(state, "spell").next; // passed 1
+  state = answerCorrect(state, "spell").next; // passed 2
+
+  const again = onWrong(state, "spell", false, 3, true);
+  assert.equal(again.next.spell.passed, 0);
+  assert.equal(again.next.spell.required, 3);
+  assert.deepEqual(again.requeue, ["spell"]);
+
+  // 重新累计 3 次才完成
   state = again.next;
   assert.equal(answerCorrect(state, "spell").report, "recoveryPass");
   state = answerCorrect(state, "spell").next;
@@ -56,20 +64,20 @@ test("补考中途再答错：连对数清零，重新要求 3 次", () => {
   assert.equal(answerCorrect(state, "spell").report, "complete");
 });
 
-test("强检查：答错一个题型，已通过的另一题型被重置并要求补回来", () => {
+test("强检查：答错一个题型，已通过的另一题型被重置并补考 1 次（两题合算一次补考）", () => {
   let state = initialRecovery(true, "spell");
   // choice 先通过
   state = answerCorrect(state, "choice").next;
   assert.equal(state.choice.done, true);
 
-  // spell 答错：服务端会清空两个 passed 标志，choice 需重考 1 次
-  const wrong = onWrong(state, "spell", true);
+  // spell 答错：服务端会清空两个 passed 标志，choice 需补考 1 次补回来
+  const wrong = onWrong(state, "spell", true, 3, false);
   assert.deepEqual([...wrong.requeue].sort(), ["choice", "spell"]);
-  assert.equal(wrong.next.spell.required, 3);
+  assert.equal(wrong.next.spell.required, 3); // 答错题型按补考次数设置
   assert.equal(wrong.next.choice.done, false);
-  assert.equal(wrong.next.choice.required, 1);
+  assert.equal(wrong.next.choice.required, 1); // 被牵连的题型只补 1 次
 
-  // spell 连对 3 次 + choice 过 1 次后才全部完成
+  // spell 补满 3 次 + choice 补 1 次后才全部完成
   state = wrong.next;
   state = answerCorrect(state, "spell").next;
   state = answerCorrect(state, "spell").next;
@@ -83,7 +91,7 @@ test("强检查：答错一个题型，已通过的另一题型被重置并要�
 
 test("强检查：另一题型尚未通过时，答错只重插答错的题型", () => {
   const state = initialRecovery(true, "spell");
-  const wrong = onWrong(state, "spell", true);
+  const wrong = onWrong(state, "spell", true, 3, false);
   assert.deepEqual(wrong.requeue, ["spell"]);
   assert.equal(wrong.next.choice.done, false);
 });

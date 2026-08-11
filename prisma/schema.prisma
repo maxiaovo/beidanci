@@ -19,6 +19,8 @@ model User {
   dailyNewTarget    Int      @default(20)
   dailyReviewTarget Int      @default(100)
   defaultCheckMode  String   @default("spell") // spell | choice
+  recoveryCorrectTarget Int  @default(1) // 复习补考需答对次数（1-5，家长可设）
+  cyclicRecovery      Boolean @default(false) // 循环补考：补考中再错则已累计次数清零重计
   themePreset       String? // 主题预设 id：macaron | aegean | purple | green | blue | warm | dark | custom
   themeCustom       String? // JSON：{background, foreground, accent, accent2}
   highlightColor    String? // 学习页高亮颜色（hex）
@@ -35,6 +37,7 @@ model User {
   reviewSkips        ReviewSkip[]
   messages           Message[]
   bookPlans          BookPlan[]
+  studyReports       StudyReport[]
   writingProfile     WritingProfile?
   writingSessions    WritingSession[]
   writingAttempts    WritingAttempt[]
@@ -334,5 +337,26 @@ model StudyLog {
   word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
   mode      String // learn | check-spell | check-choice
   result    String // correct | wrong | giveup
+  attempt   String? // 拼写题答错时的实际作答内容（供学习报告分析错因）
   createdAt DateTime @default(now())
+}
+
+// 学习报告：对一段时间内答错/放弃的单词生成错因精讲（DeepSeek）+ 朗读音频（Qwen TTS）
+// 异步生成：status 从 generating 推进到 done / failed，step 记录当前阶段供前端轮询展示进度
+model StudyReport {
+  id         String   @id @default(cuid())
+  userId     String // 学习主体（孩子）
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rangeStart DateTime
+  rangeEnd   DateTime
+  status     String   @default("generating") // generating | done | failed
+  step       String   @default("collect") // collect | narrate | tts
+  error      String   @default("")
+  content    String   @default("") // 精讲正文（markdown）
+  spoken     String   @default("") // 朗读稿（TTS 文本）
+  audioFile  String? // 文件名，位于 data/reports/
+  createdBy  String   @default("") // 触发者 user id（孩子本人或家长）
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

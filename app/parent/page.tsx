@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ParentWritingPanel from "@/components/ParentWritingPanel";
+import ParentReportPanel from "@/components/ParentReportPanel";
 
 interface ChildRow {
   id: string;
@@ -10,6 +11,8 @@ interface ChildRow {
   avatarUrl: string | null;
   dailyNewTarget: number;
   dailyReviewTarget: number;
+  recoveryCorrectTarget: number;
+  cyclicRecovery: boolean;
   todayLogs: number;
   totalLogs: number;
   accuracy: number | null;
@@ -62,6 +65,8 @@ export default function ParentPage() {
   const [skips, setSkips] = useState<SkipRow[]>([]);
   const [newTarget, setNewTarget] = useState(20);
   const [reviewTarget, setReviewTarget] = useState(100);
+  const [recoveryCorrectTarget, setRecoveryCorrectTarget] = useState(1);
+  const [cyclicRecovery, setCyclicRecovery] = useState(false);
   const [saved, setSaved] = useState(false);
   // 留言
   const [msgList, setMsgList] = useState<ChildMessage[]>([]);
@@ -97,6 +102,8 @@ export default function ParentPage() {
     setSelected(u);
     setNewTarget(u.dailyNewTarget);
     setReviewTarget(u.dailyReviewTarget);
+    setRecoveryCorrectTarget(u.recoveryCorrectTarget ?? 1);
+    setCyclicRecovery(!!u.cyclicRecovery);
     setMsgMsg("");
     loadMessages(u.id);
     const r = await fetch(`/api/parent/children/${u.id}`);
@@ -112,7 +119,12 @@ export default function ParentPage() {
     await fetch(`/api/parent/children/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dailyNewTarget: Number(newTarget), dailyReviewTarget: Number(reviewTarget) }),
+      body: JSON.stringify({
+        dailyNewTarget: Number(newTarget),
+        dailyReviewTarget: Number(reviewTarget),
+        recoveryCorrectTarget: Number(recoveryCorrectTarget),
+        cyclicRecovery,
+      }),
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -244,6 +256,26 @@ export default function ParentPage() {
                     className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
                   />
                 </label>
+                <label className="text-sm text-black/60">
+                  补考答对次数（答错的词需累计答对几次才算过）
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={recoveryCorrectTarget}
+                    onChange={(e) => setRecoveryCorrectTarget(Number(e.target.value))}
+                    className="mt-1 border rounded-lg px-3 py-1.5 w-full outline-none focus:ring-2 ring-accent"
+                  />
+                </label>
+                <label className="text-sm text-black/60 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={cyclicRecovery}
+                    onChange={(e) => setCyclicRecovery(e.target.checked)}
+                    className="w-4 h-4 accent-accent"
+                  />
+                  循环补考（补考中再答错，已累计次数清零重计）
+                </label>
                 <button
                   onClick={saveTargets}
                   className="bg-foreground text-white rounded-lg py-2 font-bold hover:opacity-90"
@@ -300,6 +332,7 @@ export default function ParentPage() {
       </div>
 
       {selected && <ParentWritingPanel childId={selected.id} childName={selected.username} />}
+      {selected && <ParentReportPanel key={selected.id} childId={selected.id} childName={selected.username} />}
 
       {/* 给孩子留言 */}
       {selected && (

@@ -10,6 +10,16 @@ export const AI_PROMPT_DEFINITIONS = [
     defaultPrompt: DEFAULT_AI_PROMPT,
   },
   {
+    key: "vocabulary.study_report",
+    title: "错词学习报告",
+    description: "分析学生一段时间内答错/放弃的单词（含实际错误拼写），生成错因精讲与 TTS 朗读稿。",
+    defaultPrompt: `你是亲切、专业的英语词汇教师，读者是小学生和家长。根据学生复习中答错或放弃的单词记录（含实际错误拼写 wrongAttempts）生成学习报告。
+输出两个字段：
+- report：纯文本精讲（不要用 Markdown 符号，用【】做小标题，换行分隔）。先一句话总体鼓励；再逐词分析：对比学生的错误拼写与正确拼写，指出具体错在哪里（如漏字母、字母颠倒、发音相近混淆），结合词根词缀和记忆法讲解为什么这样拼，给一个好记的记忆钩子；最后给 2-3 条可操作的复习建议。600 字以内。
+- spoken：朗读稿，口语化中文串讲本次报告要点（英文单词保留英文原词），150 字以内，供语音合成直接朗读，不要出现音标、括号注释和任何符号标记。
+输出严格 JSON：{"report": "...", "spoken": "..."}。${JSON_ONLY}`,
+  },
+  {
     key: "writing.evaluate",
     title: "写作批改",
     description: "评估学生作文、给出改进版、逐级提示，并提取值得复练的错点。",

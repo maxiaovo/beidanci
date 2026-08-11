@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
   if (isParent(user)) return NextResponse.json({ error: "家长账号无学习权限" }, { status: 403 });
 
-  const { wordId, mode, result, hadFailure = false, recoveryPass = false } = await req.json().catch(() => ({}));
+  const { wordId, mode, result, hadFailure = false, recoveryPass = false, attempt = null } = await req.json().catch(() => ({}));
   const validModes: ProgressMode[] = ["learn", "check-spell", "check-choice"];
   const validResults: ProgressResult[] = ["correct", "wrong", "giveup"];
   if (
@@ -19,10 +19,13 @@ export async function POST(req: Request) {
     !validModes.includes(mode) ||
     !validResults.includes(result) ||
     typeof hadFailure !== "boolean" ||
-    typeof recoveryPass !== "boolean"
+    typeof recoveryPass !== "boolean" ||
+    (attempt !== null && typeof attempt !== "string")
   ) {
     return NextResponse.json({ error: "参数错误" }, { status: 400 });
   }
+  // 只记录非正确作答的实际拼写内容（供学习报告分析错因），截断防滥用
+  const attemptText = result === "correct" || typeof attempt !== "string" ? null : attempt.trim().slice(0, 100) || null;
 
   const word = await prisma.word.findUnique({ where: { id: wordId } });
   if (!word) return NextResponse.json({ error: "单词不存在" }, { status: 404 });
@@ -59,7 +62,7 @@ export async function POST(req: Request) {
     },
   });
 
-  await prisma.studyLog.create({ data: { userId: user.id, wordId, mode, result } });
+  await prisma.studyLog.create({ data: { userId: user.id, wordId, mode, result, attempt: attemptText } });
 
   return NextResponse.json({ ok: true, stage: decision.stage, nextReviewAt: decision.nextReviewAt });
 }

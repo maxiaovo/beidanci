@@ -35,6 +35,7 @@ test("every current DeepSeek feature is represented in the prompt registry", () 
   assert.equal(new Set(keys).size, keys.length);
   assert.deepEqual(keys, [
     "vocabulary.unit_analysis",
+    "vocabulary.study_report",
     "writing.evaluate",
     "writing.topics",
     "writing.translation_chat",

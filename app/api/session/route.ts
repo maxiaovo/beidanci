@@ -220,6 +220,8 @@ export async function GET(req: Request) {
       learnedToday,
       dailyNewTarget: user.dailyNewTarget,
       dailyReviewTarget: user.dailyReviewTarget,
+      recoveryCorrectTarget: user.recoveryCorrectTarget,
+      cyclicRecovery: user.cyclicRecovery,
       defaultCheckMode: user.defaultCheckMode,
       allowSkipReview: await isAllowSkipReview(),
       highlightColor: user.highlightColor ?? null,
