@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
+import { getStudyStreak } from "@/lib/streak";
 
 // 管理员：用户列表 + 学习统计
 export async function GET() {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
 
   const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
@@ -24,19 +28,7 @@ export async function GET() {
       prisma.wordProgress.count({ where: { userId: u.id } }),
     ]);
     // 连续学习天数
-    const days = await prisma.studyLog.findMany({
-      where: { userId: u.id },
-      select: { createdAt: true },
-      orderBy: { createdAt: "desc" },
-    });
-    const daySet = new Set(days.map((d) => d.createdAt.toDateString()));
-    let streak = 0;
-    const cursor = new Date();
-    if (!daySet.has(cursor.toDateString())) cursor.setDate(cursor.getDate() - 1);
-    while (daySet.has(cursor.toDateString())) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    }
+    const streak = await getStudyStreak(u.id);
     result.push({
       id: u.id,
       username: u.username,
@@ -61,8 +53,11 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const { username, password, role } = await req.json().catch(() => ({}));
   if (!username || String(username).trim().length < 2) {

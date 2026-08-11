@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
+
+// 未登录 401 / 已登录但非管理员 403
+function adminDenied(e: unknown) {
+  const status = e instanceof AuthError ? e.status : 403;
+  return NextResponse.json({ error: status === 401 ? "未登录" : "无权限" }, { status });
+}
 
 // 家长留言管理：管理员给指定学习者留言
 // trigger: start（开始学习时）| minutes（学习 N 分钟后）| word（学到第 N 个词）
 export async function GET(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    return adminDenied(e);
   }
   const userId = new URL(req.url).searchParams.get("userId");
   if (!userId) return NextResponse.json({ error: "缺少 userId" }, { status: 400 });
@@ -23,8 +30,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    return adminDenied(e);
   }
   const body = await req.json().catch(() => ({}));
   const { userId, text, trigger } = body;
@@ -61,11 +68,19 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    return adminDenied(e);
   }
   const body = await req.json().catch(() => ({}));
   if (typeof body.id !== "string" || !body.id) return NextResponse.json({ error: "缺少 id" }, { status: 400 });
-  await prisma.message.delete({ where: { id: body.id } }).catch(() => {});
-  return NextResponse.json({ ok: true });
+  try {
+    await prisma.message.delete({ where: { id: body.id } });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return NextResponse.json({ error: "留言不存在或已删除" }, { status: 404 });
+    }
+    console.error("删除留言失败:", e);
+    return NextResponse.json({ error: "删除失败，请稍后重试" }, { status: 500 });
+  }
 }

@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
 import { saveAvatar, findAvatarFile } from "@/lib/avatars";
 
 // 管理员修改指定用户头像（multipart）
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const { id } = await params;
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
 import { getAIConfig, getTTSConfig, getSiteTitle, isRegistrationOpen, isStrictCheck, isAllowSkipReview, getLearnAppearance, setSetting, APPEARANCE_SETTING_KEYS, type LearnAppearance } from "@/lib/settings";
 import { clampAppearanceValue } from "@/lib/appearance";
 import { findSiteIcon } from "@/lib/site";
@@ -8,8 +8,11 @@ import { findSiteIcon } from "@/lib/site";
 export async function GET() {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const [ai, tts] = await Promise.all([getAIConfig(), getTTSConfig()]);
   return NextResponse.json({
@@ -34,8 +37,11 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const body = await req.json().catch(() => ({}));
 

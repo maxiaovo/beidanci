@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
 import { saveSiteIcon } from "@/lib/site";
 
 // 管理员上传网站图标（multipart）
 export async function POST(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
 
   const form = await req.formData().catch(() => null);

@@ -56,12 +56,17 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAE
 // 内存缓存：fileName -> ObjectURL（预加载后立即可播，无需再发请求）
 const audioCache = new Map<string, string>();
 
-export function playAudio(fileName: string | null | undefined) {
-  if (!fileName) return;
+// 播放音频，返回是否成功：无文件名立即 resolved false，play() 被拦截/加载失败时 false。
+// 交互入口（如 AudioButton）应据返回值给用户反馈；自动播放点可忽略。
+export function playAudio(fileName: string | null | undefined): Promise<boolean> {
+  if (!fileName) return Promise.resolve(false);
   const a = audioEl();
   a.pause();
   a.src = audioCache.get(fileName) ?? audioUrl(fileName);
-  a.play().catch(() => {});
+  return a.play().then(
+    () => true,
+    () => false
+  );
 }
 
 // 预加载一批音频：拉取为 Blob 存 ObjectURL；服务端响应头是 immutable 长缓存，
@@ -142,22 +147,32 @@ export function playGua() {
   osc.stop(ac.currentTime + 0.2);
 }
 
+// 上报学习结果。返回是否保存成功：失败时调用方应提示用户（断网丢进度曾是静默故障）。
+// practice=自由练习（服务端只记日志不动调度）；strict=客户端会话开始时的强检查快照；
+// result="defer" 表示补考熔断，服务端把该词推到明日再复习。
 export async function postProgress(
   wordId: string,
   mode: string,
-  result: "correct" | "wrong" | "giveup",
-  options: { hadFailure?: boolean; recoveryPass?: boolean; attempt?: string } = {},
-) {
-  await fetch("/api/progress", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      wordId,
-      mode,
-      result,
-      hadFailure: options.hadFailure ?? false,
-      recoveryPass: options.recoveryPass ?? false,
-      attempt: options.attempt ?? null,
-    }),
-  });
+  result: "correct" | "wrong" | "giveup" | "defer",
+  options: { hadFailure?: boolean; recoveryPass?: boolean; attempt?: string; practice?: boolean; strict?: boolean } = {},
+): Promise<boolean> {
+  try {
+    const r = await fetch("/api/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wordId,
+        mode,
+        result,
+        hadFailure: options.hadFailure ?? false,
+        recoveryPass: options.recoveryPass ?? false,
+        attempt: options.attempt ?? null,
+        practice: options.practice ?? false,
+        strict: options.strict ?? null,
+      }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }

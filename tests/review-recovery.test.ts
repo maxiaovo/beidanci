@@ -95,3 +95,47 @@ test("强检查：另一题型尚未通过时，答错只重插答错的题型",
   assert.deepEqual(wrong.requeue, ["spell"]);
   assert.equal(wrong.next.choice.done, false);
 });
+
+test("熔断：同一词连续失败 5 次后移出本场（不再重插、视为已通过）", () => {
+  let state = initialRecovery(false, "spell");
+  for (let i = 0; i < 4; i++) {
+    const r = onWrong(state, "spell", false, 3, true);
+    assert.equal(r.tripped, false);
+    assert.deepEqual(r.requeue, ["spell"]);
+    assert.equal(r.next.failStreak, i + 1);
+    state = r.next;
+  }
+  const fifth = onWrong(state, "spell", false, 3, true);
+  assert.equal(fifth.tripped, true);
+  assert.deepEqual(fifth.requeue, []); // 熔断后不再重插，本场可以结束
+  assert.equal(isCleared(fifth.next), true); // 视为已通过（调用方上报 defer 推到明日）
+});
+
+test("熔断：中途任意答对清零连续失败计数", () => {
+  let state = initialRecovery(false, "spell");
+  for (let i = 0; i < 4; i++) state = onWrong(state, "spell", false, 3, false).next; // 连续失败 4 次
+
+  state = onCorrect(state, "spell").next; // 补考中间次答对，计数清零
+  assert.equal(state.failStreak, 0);
+
+  // 再连续失败 4 次仍未熔断，第 5 次熔断
+  for (let i = 0; i < 4; i++) {
+    const r = onWrong(state, "spell", false, 3, false);
+    assert.equal(r.tripped, false);
+    state = r.next;
+  }
+  const fifth = onWrong(state, "spell", false, 3, false);
+  assert.equal(fifth.tripped, true);
+  assert.equal(isCleared(fifth.next), true);
+});
+
+test("强检查：初始带入服务端已通过题型标志，答错时已通过题型按规则补回 1 次", () => {
+  const state = initialRecovery(true, "spell", { spell: true });
+  assert.equal(state.spell.done, true);
+  assert.equal(state.choice.done, false);
+
+  // choice 答错：服务端清空两个 passed 标志，spell 此前已通过需补考 1 次补回来
+  const wrong = onWrong(state, "choice", true, 1, false);
+  assert.deepEqual([...wrong.requeue].sort(), ["choice", "spell"]);
+  assert.equal(wrong.next.spell.required, 1);
+});

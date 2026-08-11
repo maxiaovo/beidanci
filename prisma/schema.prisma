@@ -37,6 +37,7 @@ model User {
   reviewSkips        ReviewSkip[]
   messages           Message[]
   bookPlans          BookPlan[]
+  bookEnrollments    BookEnrollment[]
   studyReports       StudyReport[]
   writingProfile     WritingProfile?
   writingSessions    WritingSession[]
@@ -249,7 +250,7 @@ model Book {
   name          String
   ownerId       String
   owner         User     @relation(fields: [ownerId], references: [id])
-  status        String   @default("ready") // queued | processing | ready | error | stopped | pending_audio
+  status        String   @default("ready") // queued | processing | ready | error | stopped | pending_audio | deleting
   audioApproved Boolean  @default(false) // 导入音频生成审批：true 后才批量生成音频
   rawUnits      String   @default("[]") // 导入原始单元文本 JSON，断点续传用
   audioDone     Int      @default(0)
@@ -257,11 +258,26 @@ model Book {
   analyzeDone   Int      @default(0) // AI 分析阶段进度（单元数）
   analyzeTotal  Int      @default(0)
   sharedWithAll Boolean  @default(false) // 分配给所有用户（含未来注册用户）
+  coverFile     String? // 管理员上传的封皮文件名，位于 data/covers/；为空时用书名生成 SVG 封皮
   createdAt     DateTime @default(now())
 
-  units       Unit[]
-  assignments BookAssignment[]
-  bookPlans   BookPlan[]
+  units           Unit[]
+  assignments     BookAssignment[]
+  bookPlans       BookPlan[]
+  bookEnrollments BookEnrollment[]
+}
+
+// 在学关系：用户把"可见"的单词书加入自己的学习后才参与新词下发与每日计划；
+// 移出只删此关系与该书的 BookPlan，不删 WordProgress（已学词到期复习照常）
+model BookEnrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
 }
 
 model BookAssignment {
@@ -339,6 +355,7 @@ model WordProgress {
   updatedAt    DateTime @updatedAt
 
   @@unique([userId, wordId])
+  @@index([userId, nextReviewAt])
 }
 
 model StudyLog {
@@ -351,6 +368,8 @@ model StudyLog {
   result    String // correct | wrong | giveup
   attempt   String? // 拼写题答错时的实际作答内容（供学习报告分析错因）
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // 学习报告：对一段时间内答错/放弃的单词生成错因精讲（DeepSeek）+ 朗读音频（Qwen TTS）

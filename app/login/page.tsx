@@ -61,6 +61,7 @@ export default function LoginPage() {
           placeholder="用户名"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          required
           autoFocus
         />
         <input
@@ -69,6 +70,7 @@ export default function LoginPage() {
           placeholder="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          required
         />
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button
@@ -77,6 +79,7 @@ export default function LoginPage() {
         >
           {loading ? "登录中…" : "登录"}
         </button>
+        <p className="text-xs text-center text-black/40">忘记密码？请联系家长/老师重置</p>
         {regOpen && (
           <p className="text-sm text-center text-black/50">
             没有账号？<Link href="/register" className="text-blue-500 underline">注册</Link>

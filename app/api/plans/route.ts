@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
-import { bookVisibleWhere } from "@/lib/book-access";
+import { bookVisibleWhere, bookEnrolledWhere } from "@/lib/book-access";
 
 // 学习计划：每本书的每日新词量配置
 export async function GET() {
@@ -39,9 +39,9 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "参数错误" }, { status: 400 });
   }
 
-  // 可见词书 id 集合（一次取回）
+  // 只有"在学"的词书才能配置计划（一次取回）
   const visibleBooks = await prisma.book.findMany({
-    where: bookVisibleWhere(user.id),
+    where: { ...bookVisibleWhere(user.id), ...bookEnrolledWhere(user.id) },
     select: { id: true },
   });
   const visibleIds = new Set(visibleBooks.map((b) => b.id));
@@ -51,7 +51,7 @@ export async function PUT(req: Request) {
   for (const raw of body.plans) {
     const { bookId, amountType, wordsPerDay, fractionDen } = raw ?? {};
     if (typeof bookId !== "string" || !visibleIds.has(bookId)) {
-      return NextResponse.json({ error: "词书不存在或无权限" }, { status: 400 });
+      return NextResponse.json({ error: "词书不存在或未加入学习" }, { status: 400 });
     }
     if (seen.has(bookId)) {
       return NextResponse.json({ error: "同一本书不能重复设置计划" }, { status: 400 });

@@ -13,22 +13,33 @@ export async function GET() {
   const books = await prisma.book.findMany({
     where: bookVisibleWhere(user.id),
     orderBy: { createdAt: "asc" },
-    include: { units: { include: { _count: { select: { words: true } } } } },
+    include: {
+      units: { include: { _count: { select: { words: true } } } },
+      bookEnrollments: { where: { userId: user.id }, select: { id: true } },
+    },
   });
 
-  const result = [];
-  for (const b of books) {
-    const wordIds = b.units.length
-      ? (await prisma.word.findMany({ where: { unit: { bookId: b.id } }, select: { id: true } })).map((w) => w.id)
-      : [];
-    const total = wordIds.length;
-    const learned = total
-      ? await prisma.wordProgress.count({ where: { userId: user.id, wordId: { in: wordIds } } })
-      : 0;
-    const mastered = total
-      ? await prisma.wordProgress.count({ where: { userId: user.id, wordId: { in: wordIds }, stage: { gte: MAX_STAGE } } })
-      : 0;
-    result.push({
+  const bookIds = books.map((b) => b.id);
+  // 进度聚合：一次查询取出当前用户在这些书里的全部 WordProgress，JS 里按书聚合，避免按书 N+1
+  const progresses = bookIds.length
+    ? await prisma.wordProgress.findMany({
+        where: { userId: user.id, word: { unit: { bookId: { in: bookIds } } } },
+        select: { stage: true, word: { select: { unit: { select: { bookId: true } } } } },
+      })
+    : [];
+  const statsByBook = new Map<string, { learned: number; mastered: number }>();
+  for (const p of progresses) {
+    const bookId = p.word.unit.bookId;
+    const s = statsByBook.get(bookId) ?? { learned: 0, mastered: 0 };
+    s.learned++;
+    if (p.stage >= MAX_STAGE) s.mastered++;
+    statsByBook.set(bookId, s);
+  }
+
+  const result = books.map((b) => {
+    const total = b.units.reduce((sum, u) => sum + u._count.words, 0);
+    const stats = statsByBook.get(b.id) ?? { learned: 0, mastered: 0 };
+    return {
       id: b.id,
       name: b.name,
       status: b.status,
@@ -38,12 +49,14 @@ export async function GET() {
       analyzeTotal: b.analyzeTotal,
       sharedWithAll: b.sharedWithAll,
       mine: b.ownerId === user.id,
+      enrolled: b.bookEnrollments.length > 0,
+      hasCover: !!b.coverFile,
       createdAt: b.createdAt,
       total,
-      learned,
-      mastered,
+      learned: stats.learned,
+      mastered: stats.mastered,
       units: b.units.length,
-    });
-  }
+    };
+  });
   return NextResponse.json({ books: result });
 }

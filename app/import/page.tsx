@@ -13,6 +13,7 @@ interface Task {
   phase: Phase;
   file?: File;
   bookName?: string; // 自定义书名（仅单文件导入时）
+  cover?: File; // 封皮图片（仅单文件导入时）
   bookId?: string;
   analyzeDone: number;
   analyzeTotal: number;
@@ -53,6 +54,7 @@ function phaseOf(status: string): Phase {
 export default function ImportPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [bookName, setBookName] = useState("");
+  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [users, setUsers] = useState<{ id: string; username: string }[]>([]);
   const [assignTo, setAssignTo] = useState<Set<string>>(new Set());
   const [assignAll, setAssignAll] = useState(false);
@@ -105,6 +107,7 @@ export default function ImportPage() {
       const form = new FormData();
       form.append("file", next.file!);
       if (next.bookName) form.append("bookName", next.bookName);
+      if (next.cover) form.append("cover", next.cover);
       if (isAdmin) {
         if (assignAll) form.append("assignAll", "true");
         if (assignTo.size) form.append("assignTo", JSON.stringify([...assignTo]));
@@ -192,6 +195,7 @@ export default function ImportPage() {
         ? bookName.trim()
         : f.name.replace(/\.[^.]+$/, "").replace(/_/g, " "),
       bookName: files.length === 1 && bookName.trim() ? bookName.trim() : undefined,
+      cover: files.length === 1 ? coverFile ?? undefined : undefined,
       phase: "queued",
       file: f,
       analyzeDone: 0,
@@ -202,6 +206,7 @@ export default function ImportPage() {
     setTasks((prev) => [...prev, ...newTasks]);
     setFiles([]);
     setBookName("");
+    setCoverFile(null);
     if (fileRef.current) fileRef.current.value = "";
   }
 

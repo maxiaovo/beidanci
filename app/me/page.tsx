@@ -34,6 +34,7 @@ interface BookInfo {
   total: number;
   learned: number;
   mastered: number;
+  enrolled: boolean;
 }
 
 interface SessionPlan {
@@ -95,7 +96,7 @@ export default function MePage() {
     return <div className="p-10 text-center text-black/40">正在整理你的学习进度…</div>;
   }
 
-  const readyBooks = books.filter((book) => book.status === "ready");
+  const readyBooks = books.filter((book) => book.status === "ready" && book.enrolled);
   const totalWords = readyBooks.reduce((sum, book) => sum + book.total, 0);
   const learnedWords = readyBooks.reduce((sum, book) => sum + book.learned, 0);
   const masteredWords = readyBooks.reduce((sum, book) => sum + book.mastered, 0);
@@ -139,7 +140,7 @@ export default function MePage() {
                 <div className="flex items-center gap-2 text-sm font-bold text-accent"><ChartLineUp size={18} weight="bold" /> 学习进度</div>
                 <h2 className="mt-1 text-2xl font-black">你正在稳步积累</h2>
               </div>
-              <Link href="/words" className="hidden items-center gap-1.5 text-sm font-bold text-foreground/60 hover:text-accent sm:flex">查看单词书 <ArrowRight size={16} weight="bold" /></Link>
+              <Link href="/" className="hidden items-center gap-1.5 text-sm font-bold text-foreground/60 hover:text-accent sm:flex">查看单词书 <ArrowRight size={16} weight="bold" /></Link>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {[
@@ -219,7 +220,7 @@ export default function MePage() {
             { href: "/settings", title: "账号与外观", desc: "头像、主题和账号设置", icon: GearSix },
           ] : [
             { href: "/?plan=1", title: "每日任务", desc: "调整每本单词书的每日学习量", icon: CalendarDots },
-            { href: "/words", title: "单词书", desc: "管理词书并查看分书进度", icon: Books },
+            { href: "/#shelf", title: "单词书", desc: "管理词书并查看分书进度", icon: Books },
             { href: "/writing", title: "写作训练", desc: "练习、历史记录与能力档案", icon: PencilLine },
             { href: "/me/binding", title: "账号绑定", desc: "绑定家长账号或发出邀约", icon: Users },
             { href: "/settings", title: "系统设置", desc: "头像、学习目标、主题与偏好", icon: GearSix },

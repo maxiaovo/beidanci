@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
 import { getImportStatus } from "@/lib/import-runner";
 import { prisma } from "@/lib/db";
 
@@ -7,8 +7,11 @@ import { prisma } from "@/lib/db";
 export async function GET() {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const status = getImportStatus();
   let currentBook: { id: string; name: string; analyzeDone: number; analyzeTotal: number; audioDone: number; audioTotal: number; status: string } | null = null;

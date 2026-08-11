@@ -109,6 +109,14 @@ function isStopped(bookId: string): boolean {
   return stopRequested.has(bookId);
 }
 
+// 是否应中止导入：用户显式停止，或书已不存在 / 状态已非 processing
+// （DELETE 删书时会先把状态置为 deleting，runner 在此干净退出，不再写库）
+async function shouldAbort(bookId: string): Promise<boolean> {
+  if (isStopped(bookId)) return true;
+  const book = await prisma.book.findUnique({ where: { id: bookId }, select: { status: true } });
+  return !book || book.status !== "processing";
+}
+
 async function pump() {
   if (processing) return;
   const job = queue.shift();
@@ -129,12 +137,14 @@ async function runImport(bookId: string, units: RawUnit[]) {
   try {
     // 排队期间可能已被停止或删除
     const book = await prisma.book.findUnique({ where: { id: bookId } });
-    if (!book || book.status === "stopped") return;
+    if (!book || book.status === "stopped" || book.status === "deleting") return;
 
-    await prisma.book.update({
-      where: { id: bookId },
+    // 条件更新：若 DELETE 抢先置了 deleting，本轮直接退出，不覆盖状态
+    const started = await prisma.book.updateMany({
+      where: { id: bookId, status: { not: "deleting" } },
       data: { status: "processing", analyzeTotal: units.length, analyzeDone: 0 },
     });
+    if (started.count === 0) return;
 
     // 1) 逐单元分析并入库（断点续传：已入库且非空的单元跳过；空单元删掉重做）
     const existingUnits = await prisma.unit.findMany({
@@ -143,7 +153,7 @@ async function runImport(bookId: string, units: RawUnit[]) {
     });
     const unitByIndex = new Map(existingUnits.map((u) => [u.orderIndex, u]));
     for (let ui = 0; ui < units.length; ui++) {
-      if (isStopped(bookId)) throw new Stopped();
+      if (await shouldAbort(bookId)) throw new Stopped();
       const ex = unitByIndex.get(ui);
       if (ex && ex._count.words > 0) {
         await prisma.book.update({ where: { id: bookId }, data: { analyzeDone: ui + 1 } });
@@ -162,7 +172,7 @@ async function runImport(bookId: string, units: RawUnit[]) {
         await prisma.book.update({ where: { id: bookId }, data: { analyzeDone: ui + 1 } });
         continue;
       }
-      if (isStopped(bookId)) throw new Stopped();
+      if (await shouldAbort(bookId)) throw new Stopped();
       const unit = await prisma.unit.create({
         data: { bookId, title: raw.title, orderIndex: ui },
       });
@@ -219,7 +229,7 @@ async function runImport(bookId: string, units: RawUnit[]) {
     let done = 0;
     logImportEvent({ kind: "info", bookId, text: `开始生成音频，共 ${allWords.length * 3} 条` });
     for (const w of allWords) {
-      if (isStopped(bookId)) throw new Stopped();
+      if (await shouldAbort(bookId)) throw new Stopped();
       const out: { voice?: string } = {};
       // 断点续传：已有记录且文件存在的条目跳过，只补缺失的
       // 新生成的音频登记为版本（时间戳文件名）并设为当前；旧版本保留
@@ -232,7 +242,7 @@ async function runImport(bookId: string, units: RawUnit[]) {
           await registerAudioVersion(w.id, "word", file, out.voice || "");
           audioWord = file;
         }
-        if (isStopped(bookId)) throw new Stopped();
+        if (await shouldAbort(bookId)) throw new Stopped();
       }
       done++;
       let audioEx1 = w.audioEx1;
@@ -243,7 +253,7 @@ async function runImport(bookId: string, units: RawUnit[]) {
           await registerAudioVersion(w.id, "ex1", file, out.voice || "");
           audioEx1 = file;
         }
-        if (isStopped(bookId)) throw new Stopped();
+        if (await shouldAbort(bookId)) throw new Stopped();
       }
       done++;
       let audioEx2 = w.audioEx2;
@@ -267,9 +277,10 @@ async function runImport(bookId: string, units: RawUnit[]) {
     logImportEvent({ kind: "info", bookId, text: "✓ 导入完成" });
   } catch (e) {
     if (e instanceof Stopped) {
-      // 用户主动停止：保留已生成内容，标记为已停止
+      // 用户主动停止：保留已生成内容，标记为已停止；
+      // 若是删书触发的中止（状态已为 deleting / 记录已删），不再写库
       await prisma.book
-        .update({ where: { id: bookId }, data: { status: "stopped" } })
+        .updateMany({ where: { id: bookId, status: { not: "deleting" } }, data: { status: "stopped" } })
         .catch(() => {});
       return;
     }

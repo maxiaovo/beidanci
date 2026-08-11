@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getSessionUser, canAccessChild } from "@/lib/session";
 
@@ -63,9 +64,18 @@ export async function DELETE(req: Request) {
 
   // 只能删除发给自己孩子的留言（管理员不限）
   const msg = await prisma.message.findUnique({ where: { id: body.id }, select: { userId: true } });
-  if (!msg || !(await canAccessChild(viewer, msg.userId))) {
+  if (!msg) return NextResponse.json({ error: "留言不存在或已删除" }, { status: 404 });
+  if (!(await canAccessChild(viewer, msg.userId))) {
     return NextResponse.json({ error: "无权限" }, { status: 403 });
   }
-  await prisma.message.delete({ where: { id: body.id } }).catch(() => {});
-  return NextResponse.json({ ok: true });
+  try {
+    await prisma.message.delete({ where: { id: body.id } });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return NextResponse.json({ error: "留言不存在或已删除" }, { status: 404 });
+    }
+    console.error("删除留言失败:", e);
+    return NextResponse.json({ error: "删除失败，请稍后重试" }, { status: 500 });
+  }
 }

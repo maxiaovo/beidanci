@@ -7,6 +7,7 @@ import Image from "next/image";
 import {
   ArrowRight,
   BookOpen,
+  Books,
   ChatText,
   Copy,
   GearSix,
@@ -20,7 +21,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import MessageOverlay, { ParentMessage } from "@/components/MessageOverlay";
-import BookShelf from "@/components/BookShelf";
+import BookShelf, { BookCoverThumb } from "@/components/BookShelf";
 import type { DailyWordResource } from "@/components/DailyWordManager";
 
 interface BookInfo {
@@ -30,6 +31,8 @@ interface BookInfo {
   total: number;
   learned: number;
   mastered: number;
+  enrolled: boolean;
+  hasCover: boolean;
 }
 
 interface SessionPlan {
@@ -110,35 +113,44 @@ export default function Dashboard() {
   const [showPlanSettings, setShowPlanSettings] = useState(false);
   const [savingPlans, setSavingPlans] = useState(false);
   const [plansSaved, setPlansSaved] = useState(false);
+  const [plansError, setPlansError] = useState("");
   const [selectedBook, setSelectedBook] = useState<string>(AUTO);
   const [writing, setWriting] = useState<WritingOverview | null>(null);
   const [learningModule, setLearningModule] = useState<LearningModule>("words");
   const [dailyWord, setDailyWord] = useState<DailyWordResource | null>(null);
+  const [showAddBooks, setShowAddBooks] = useState(false);
+  const [enrollingId, setEnrollingId] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    // 家长不参与学习，落地即转到家长页
-    fetch("/api/auth/me").then(async (r) => {
+    let cancelled = false;
+    (async () => {
+      // 家长不参与学习：先判定角色再拉学习数据，避免家长角色下 403 导致白屏
+      const r = await fetch("/api/auth/me");
       const d = await r.json();
-      if (d.user?.role === "parent") router.replace("/parent");
-    });
-    const localDate = new Intl.DateTimeFormat("en-CA", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-    Promise.all([
-      fetch("/api/books").then((r) => (r.status === 401 ? null : r.json())),
-      fetch("/api/session").then((r) => (r.status === 401 ? null : r.json())),
-      fetch("/api/plans").then((r) => (r.status === 401 ? null : r.json())),
-      fetch("/api/writing/overview").then((r) => (r.ok ? r.json() : null)),
-      fetch(`/api/daily-words?date=${localDate}`).then((r) => (r.ok ? r.json() : null)),
-    ]).then(([b, s, p, w, daily]) => {
+      if (cancelled) return;
+      if (d.user?.role === "parent") {
+        router.replace("/parent");
+        return;
+      }
+      const localDate = new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+      const [b, s, p, w, daily] = await Promise.all([
+        fetch("/api/books").then((res) => (res.status === 401 ? null : res.json())),
+        fetch("/api/session").then((res) => (res.status === 401 ? null : res.json())),
+        fetch("/api/plans").then((res) => (res.status === 401 ? null : res.json())),
+        fetch("/api/writing/overview").then((res) => (res.ok ? res.json() : null)),
+        fetch(`/api/daily-words?date=${localDate}`).then((res) => (res.ok ? res.json() : null)),
+      ]);
+      if (cancelled) return;
       if (!b || !s) {
         router.push("/login");
         return;
       }
-      setBooks(b.books);
+      setBooks(b.books ?? []);
       setSession(s);
       if (p?.plans) setPlanSettings(settingsFromPlans(p.plans));
       if (w) setWriting(w);
@@ -147,17 +159,20 @@ export default function Dashboard() {
         setShowPlanSettings(true);
       }
       setLoaded(true);
-    });
-    // 登录后落地页：展示"开始时"触发的家长留言
-    fetch("/api/messages").then(async (r) => {
-      if (!r.ok) return;
-      const d = await r.json();
-      setMsgQueue((d.messages as ParentMessage[]).filter((m) => m.trigger === "start"));
-    });
+      // 登录后落地页：展示"开始时"触发的家长留言
+      const mr = await fetch("/api/messages");
+      if (cancelled || !mr.ok) return;
+      const md = await mr.json();
+      setMsgQueue((md.messages as ParentMessage[]).filter((m) => m.trigger === "start"));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const savePlans = async () => {
     setSavingPlans(true);
+    setPlansError("");
     const plans = Object.entries(planSettings)
       .filter(([, s]) => s.mode !== "none")
       .map(([bookId, s]) => ({
@@ -180,8 +195,45 @@ export default function Dashboard() {
       setPlanSettings(settingsFromPlans(p.plans ?? []));
       setPlansSaved(true);
       setTimeout(() => setPlansSaved(false), 3000);
+    } else {
+      const d = await r.json().catch(() => ({}));
+      setPlansError(d.error || "保存失败，请重试");
     }
     setSavingPlans(false);
+  };
+
+  // 加入学习：刷新书单与今日安排
+  const addBook = async (bookId: string) => {
+    setEnrollingId(bookId);
+    const r = await fetch(`/api/books/${bookId}/enroll`, { method: "POST" });
+    if (r.ok) {
+      const [b, s] = await Promise.all([
+        fetch("/api/books").then((res) => res.json()),
+        fetch("/api/session").then((res) => res.json()),
+      ]);
+      setBooks(b.books ?? []);
+      setSession(s);
+    }
+    setEnrollingId(null);
+  };
+
+  // 移出学习：不删学习记录，重新加入后进度还在
+  const removeBook = async (bookId: string) => {
+    const book = books.find((b) => b.id === bookId);
+    if (!book) return;
+    if (!window.confirm(`移出「${book.name}」？\n\n移出后不再安排这本书的新词和每日计划；你已学单词的复习记录会保留，以后重新加入时进度还在。`)) return;
+    const r = await fetch(`/api/books/${bookId}/enroll`, { method: "DELETE" });
+    if (r.ok) {
+      if (selectedBook === bookId) setSelectedBook(AUTO);
+      const [b, s, p] = await Promise.all([
+        fetch("/api/books").then((res) => res.json()),
+        fetch("/api/session").then((res) => res.json()),
+        fetch("/api/plans").then((res) => res.json()),
+      ]);
+      setBooks(b.books ?? []);
+      setSession(s);
+      setPlanSettings(settingsFromPlans(p.plans ?? []));
+    }
   };
 
   if (!loaded) {
@@ -191,10 +243,16 @@ export default function Dashboard() {
   const due = session?.stats.dueCount ?? 0;
   const plans = session?.plans ?? [];
   const readyBooks = books.filter((b) => b.status === "ready");
+  const enrolledBooks = readyBooks.filter((b) => b.enrolled);
+  const addableBooks = readyBooks.filter((b) => !b.enrolled);
 
-  // 系统安排与所有单词书同时展示，点击卡片即可切换。
+  // 选中项失效（书被移出）时回落到智能安排
+  const effectiveSelected =
+    selectedBook !== AUTO && enrolledBooks.some((b) => b.id === selectedBook) ? selectedBook : AUTO;
+
+  // 系统安排与在学单词书同时展示，点击卡片即可切换。
   let selectedDesc: string;
-  if (selectedBook === AUTO) {
+  if (effectiveSelected === AUTO) {
     selectedDesc =
       plans.length > 0
         ? plans
@@ -202,36 +260,39 @@ export default function Dashboard() {
             .join(" · ")
         : `按每日新词目标自动安排（${session?.stats.dailyNewTarget ?? 0} 词）`;
   } else {
-    const plan = plans.find((p) => p.bookId === selectedBook);
+    const plan = plans.find((p) => p.bookId === effectiveSelected);
     selectedDesc = plan
       ? `${planDesc(plan)} · ${plan.quota === 0 ? "已完成" : `今日 ${plan.doneToday}/${plan.quota}`}${plan.remaining === 0 && plan.quota > 0 ? " · 今日完成" : ""}`
       : "本书暂无每日计划，将按每日新词目标安排";
   }
 
-  const learnHref = selectedBook === AUTO ? "/learn" : `/learn?book=${selectedBook}`;
-  const selectedName = selectedBook === AUTO ? "智能安排" : readyBooks.find((b) => b.id === selectedBook)?.name;
-  const totalWords = readyBooks.reduce((sum, book) => sum + book.total, 0);
-  const learnedWords = readyBooks.reduce((sum, book) => sum + book.learned, 0);
-  const shelfItems = [
+  const learnHref = effectiveSelected === AUTO ? "/learn" : `/learn?book=${effectiveSelected}`;
+  const selectedName = effectiveSelected === AUTO ? "智能安排" : enrolledBooks.find((b) => b.id === effectiveSelected)?.name;
+  const totalWords = enrolledBooks.reduce((sum, book) => sum + book.total, 0);
+  const learnedWords = enrolledBooks.reduce((sum, book) => sum + book.learned, 0);
+  const shelfBooks = [
     {
       id: AUTO,
+      auto: true,
       name: "智能安排",
       total: totalWords,
       learned: learnedWords,
-      mastered: readyBooks.reduce((sum, book) => sum + book.mastered, 0),
-      eyebrow: "推荐",
-      description: selectedDesc,
+      hasCover: false,
+      subtitle: "按你的每日计划自动安排",
     },
-    ...readyBooks.map((book) => ({
-      id: book.id,
-      name: book.name,
-      total: book.total,
-      learned: book.learned,
-      mastered: book.mastered,
-      description: plans.find((plan) => plan.bookId === book.id)
-        ? planDesc(plans.find((plan) => plan.bookId === book.id)!)
-        : `已学习 ${book.learned}，已掌握 ${book.mastered}`,
-    })),
+    ...enrolledBooks.map((book) => {
+      const plan = plans.find((p) => p.bookId === book.id);
+      return {
+        id: book.id,
+        name: book.name,
+        total: book.total,
+        learned: book.learned,
+        hasCover: book.hasCover,
+        subtitle: plan
+          ? `${planDesc(plan)} · ${plan.quota === 0 ? "今日完成" : `今日 ${plan.doneToday}/${plan.quota}`}`
+          : `已学习 ${book.learned}，已掌握 ${book.mastered}`,
+      };
+    }),
   ];
 
   const writingNeedsAssessment = !writing?.profile || writing.profile.assessmentStatus === "pending";
@@ -381,6 +442,26 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+            {isWords && (
+              <div className="dashboard-hero-settings flex items-center gap-3.5 self-start rounded-2xl border px-4 py-3 lg:self-center">
+                {effectiveSelected === AUTO ? (
+                  <span className="flex h-14 w-11 items-center justify-center rounded-xl bg-accent/12 text-accent">
+                    <Books size={24} weight="duotone" />
+                  </span>
+                ) : (
+                  <BookCoverThumb
+                    id={effectiveSelected}
+                    name={selectedName ?? ""}
+                    hasCover={enrolledBooks.find((b) => b.id === effectiveSelected)?.hasCover ?? false}
+                  />
+                )}
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-bold tracking-[0.14em] uppercase opacity-55">当前学习</span>
+                  <span className="mt-0.5 block truncate text-base font-black">{selectedName}</span>
+                  <span className="mt-0.5 block max-w-56 truncate text-xs opacity-70">{selectedDesc}</span>
+                </span>
+              </div>
+            )}
             <div className="flex flex-col gap-2.5">
               <Link
                 href={todayHref}
@@ -405,18 +486,24 @@ export default function Dashboard() {
 
       {isWords ? (
         <>
-          <section className="theme-surface rounded-[2rem] border p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
+          <section id="shelf" className="theme-surface scroll-mt-20 rounded-[2rem] border p-5 shadow-[0_16px_45px_rgba(58,46,92,0.08)] backdrop-blur sm:p-7 lg:p-8">
             <div className="mb-6">
               <div className="theme-section-eyebrow flex items-center gap-2 text-sm font-bold"><Sparkle size={18} weight="fill" /> 学习内容</div>
-              <h2 className="mt-2 text-2xl font-black">选择今天要学的单词书</h2>
-              <p className="mt-2 text-sm leading-6 text-black/48">点击即可切换；你的选择会同步影响上面的今日任务。</p>
+              <h2 className="mt-2 text-2xl font-black">我的单词书</h2>
+              <p className="mt-2 text-sm leading-6 text-black/48">点击卡片选择今天学哪本；想学的书用「添加单词书」加入，不学了可以随时移出（学习记录保留）。</p>
             </div>
-            {readyBooks.length === 0 ? (
+            {enrolledBooks.length === 0 && addableBooks.length === 0 ? (
               <div className="py-10 text-center text-black/40">
                 还没有可用的单词书，<Link href="/import" className="font-bold text-accent underline">去导入一本</Link>吧
               </div>
             ) : (
-              <BookShelf items={shelfItems} value={selectedBook} onChange={setSelectedBook} />
+              <BookShelf
+                books={shelfBooks}
+                value={effectiveSelected}
+                onChange={setSelectedBook}
+                onRemove={removeBook}
+                onAdd={() => setShowAddBooks(true)}
+              />
             )}
           </section>
           <div className="flex flex-col items-start justify-between gap-3 border-t border-black/8 px-1 pt-5 text-sm text-black/45 sm:flex-row sm:items-center">
@@ -453,6 +540,63 @@ export default function Dashboard() {
         </section>
       )}
 
+      {/* 添加单词书弹窗：列出可见但未在学的书 */}
+      {showAddBooks && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          onClick={() => setShowAddBooks(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-books-title"
+            className="max-h-[84vh] w-full max-w-xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl sm:p-7"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-bold text-accent">发现单词书</div>
+                <h2 id="add-books-title" className="mt-1 text-2xl font-black">添加单词书</h2>
+                <p className="mt-2 text-sm leading-6 text-black/48">加入后会出现在首页书架，并参与新词安排；随时可以移出。</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddBooks(false)}
+                aria-label="关闭添加单词书"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/5 text-black/45 transition hover:bg-black/10 hover:text-black/70"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+            {addableBooks.length === 0 ? (
+              <div className="py-6 text-center text-sm text-black/40">
+                没有更多可添加的单词书，<Link href="/import" className="font-bold text-accent underline">自己导入一本</Link>吧
+              </div>
+            ) : (
+              <div className="flex flex-col divide-y divide-black/5">
+                {addableBooks.map((b) => (
+                  <div key={b.id} className="flex items-center gap-4 py-3.5">
+                    <BookCoverThumb id={b.id} name={b.name} hasCover={b.hasCover} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-bold">{b.name}</div>
+                      <div className="mt-0.5 text-xs text-black/45">{b.total} 词</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addBook(b.id)}
+                      disabled={enrollingId === b.id}
+                      className="shrink-0 rounded-xl bg-foreground px-4 py-2 text-sm font-bold text-white transition hover:bg-accent disabled:opacity-50"
+                    >
+                      {enrollingId === b.id ? "加入中…" : "加入学习"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 每日任务设置（齿轮弹窗） */}
       {showPlanSettings && (
         <div
@@ -480,12 +624,12 @@ export default function Dashboard() {
                 <X size={20} weight="bold" />
               </button>
             </div>
-            <p className="mb-5 text-sm leading-6 text-black/48">调整每本单词书每天的学习量。写作任务会根据系统评估与错点复练自动安排。</p>
-            {readyBooks.length === 0 ? (
-              <div className="text-black/40 text-sm">还没有可用的单词书</div>
+            <p className="mb-5 text-sm leading-6 text-black/48">调整每本在学单词书每天的学习量。写作任务会根据系统评估与错点复练自动安排。</p>
+            {enrolledBooks.length === 0 ? (
+              <div className="text-black/40 text-sm">还没有在学的单词书，先在首页书架上添加</div>
             ) : (
               <div className="flex flex-col divide-y divide-black/5">
-                {readyBooks.map((b) => {
+                {enrolledBooks.map((b) => {
                   const s = planSettings[b.id] ?? { mode: "none", wordsPerDay: 20, fractionDen: 2 };
                   const update = (patch: Partial<PlanSetting>) =>
                     setPlanSettings((prev) => ({ ...prev, [b.id]: { ...s, ...patch } }));
@@ -532,6 +676,7 @@ export default function Dashboard() {
                 {savingPlans ? "保存中…" : "保存"}
               </button>
               {plansSaved && <span className="text-sm text-green-500">已保存</span>}
+              {plansError && <span className="text-sm text-red-500">{plansError}</span>}
             </div>
           </div>
         </div>

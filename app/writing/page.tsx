@@ -315,7 +315,7 @@ function Onboarding({ busy, error, save }: { busy: boolean; error: string; save:
       <section className="rounded-[2rem] bg-white p-6 shadow-xl sm:p-9">
         <div className="text-sm font-bold text-accent">写作档案 · 第一步</div>
         <h1 className="mt-2 text-3xl font-black">先从你现在的位置出发</h1>
-        <p className="mt-3 text-black/50">知道水平就告诉系统；不知道也没关系，我们用 3 个单句开始摸底，必要时再写一小段。</p>
+        <p className="mt-3 text-black/50">知道水平就告诉系统；不知道也没关系，我们用 3 道小题摸底——写几句日常表达，不限时。</p>
         <div className="mt-7 grid gap-5 sm:grid-cols-2">
           <label className="text-sm font-bold">我对当前水平的了解
             <select value={levelKind} onChange={(e) => setLevelKind(e.target.value)} className="mt-2 w-full rounded-xl border border-black/10 bg-white p-3 font-normal">
@@ -336,7 +336,7 @@ function Onboarding({ busy, error, save }: { busy: boolean; error: string; save:
         </div>
         <label className="mt-5 block text-sm font-bold">还想让系统知道什么（可选）<textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} className="mt-2 w-full rounded-xl border border-black/10 p-3 font-normal" /></label>
         {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
-        <button disabled={busy} onClick={() => save({ levelKind, levelValue, score, note, goal, genres: [] })} className="mt-6 rounded-xl bg-foreground px-7 py-3 font-bold text-white disabled:opacity-50">{busy ? "准备中…" : levelKind === "unknown" ? "开始 8 分钟摸底" : "建立档案并开始"}</button>
+        <button disabled={busy} onClick={() => save({ levelKind, levelValue, score, note, goal, genres: [] })} className="mt-6 rounded-xl bg-foreground px-7 py-3 font-bold text-white disabled:opacity-50">{busy ? "准备中…" : levelKind === "unknown" ? "开始摸底（3 道小题）" : "建立档案并开始"}</button>
       </section>
     </div>
   );
@@ -680,12 +680,26 @@ export function ImitationRitual({ prompt, onDone }: { prompt: WritingPrompt; onD
           </div>
           {peeking && (
             <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
-              <div className="text-xs font-bold text-amber-700">偷看一眼 · 松开按键就藏起来</div>
+              <div className="text-xs font-bold text-amber-700">偷看一眼 · 松开就藏起来</div>
               <p className="mt-1 text-lg font-bold leading-8">{english}</p>
             </div>
           )}
           <textarea value={recall} onChange={(event) => setRecall(event.target.value)} maxLength={2000} rows={3} placeholder="在这里默写英文原句…" className="mt-4 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />
-          <p className="mt-2 text-xs text-black/40">按住 <kbd className="rounded border border-black/15 bg-white px-1">Ctrl</kbd> 或 <kbd className="rounded border border-black/15 bg-white px-1">⌘</kbd> 可偷看原句</p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="text-xs text-black/40">按住 <kbd className="rounded border border-black/15 bg-white px-1">Ctrl</kbd> 或 <kbd className="rounded border border-black/15 bg-white px-1">⌘</kbd> 可偷看原句，或</p>
+            <button
+              type="button"
+              aria-label="按住偷看原句"
+              onPointerDown={(event) => { event.preventDefault(); setPeeking(true); }}
+              onPointerUp={() => setPeeking(false)}
+              onPointerLeave={() => setPeeking(false)}
+              onPointerCancel={() => setPeeking(false)}
+              onContextMenu={(event) => event.preventDefault()}
+              className="touch-none select-none rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 transition active:bg-amber-100"
+            >
+              按住偷看
+            </button>
+          </div>
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <button type="button" disabled={!recall.trim()} onClick={() => setStep(2)} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">写好了，对照原句<kbd className="ml-2 rounded bg-white/15 px-1.5 py-0.5 text-xs font-bold">⌘⏎</kbd></button>
             <button type="button" onClick={() => setStep(0)} className="text-sm font-bold text-black/45 underline underline-offset-4">想不起来，回去再看一眼</button>
@@ -720,6 +734,19 @@ export function ImitationRitual({ prompt, onDone }: { prompt: WritingPrompt; onD
 function Workspace(props: { session: Session; activeTask: Task | null; latestAttempt: Attempt | null; flashFeedback: { feedback: Feedback; passed: boolean } | null; draft: string; setDraft: (x: string) => void; busy: boolean; error: string; chat: string; setChat: (x: string) => void; hint: Json | null; showExample: boolean; setShowExample: (x: boolean) => void; submit: () => Promise<void>; sendChat: () => Promise<void>; unlockHint: () => Promise<void>; close: () => void }) {
   const { session, activeTask } = props;
   const [ritualDoneFor, setRitualDoneFor] = useState<string | null>(null);
+  // 批改常需 10–30 秒：超过 30 秒追加一句安抚，避免孩子以为卡死
+  const [slowWait, setSlowWait] = useState(false);
+  const [wasBusy, setWasBusy] = useState(false);
+  if (props.busy !== wasBusy) {
+    // 渲染期间同步派生状态（React 推荐写法）：busy 结束时立刻收起安抚文案
+    setWasBusy(props.busy);
+    if (!props.busy) setSlowWait(false);
+  }
+  useEffect(() => {
+    if (!props.busy) return;
+    const timer = setTimeout(() => setSlowWait(true), 30000);
+    return () => clearTimeout(timer);
+  }, [props.busy]);
   const isImitation = !!activeTask && session.mode === "imitation" && (activeTask.prompt.model?.sentences.length ?? 0) > 0;
   const ritualPending = isImitation && ritualDoneFor !== activeTask!.id;
   return <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -753,7 +780,8 @@ function Workspace(props: { session: Session; activeTask: Task | null; latestAtt
         )}
         {props.hint && <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm"><div className="font-bold text-blue-700">本级帮助</div><pre className="mt-2 whitespace-pre-wrap font-sans text-blue-900">{Object.entries(props.hint).map(([key, value]) => `${key === "keywords" ? "关键词" : key === "frame" ? "句型骨架" : key === "modelAnswer" ? "示范" : "分步重建"}：${Array.isArray(value) ? value.join(" · ") : String(value)}`).join("\n")}</pre>{"modelAnswer" in props.hint && <button onClick={() => props.setShowExample(false)} className="mt-2 font-bold underline">隐藏示范，开始回忆重写</button>}</div>}
         <textarea value={props.draft} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!props.busy && props.draft.trim()) void props.submit(); } }} onChange={(e) => props.setDraft(e.target.value)} maxLength={5000} rows={activeTask.type === "article" ? 10 : 5} placeholder="在这里写英文…" className="mt-5 w-full rounded-2xl border border-black/10 p-4 text-lg leading-8 outline-none focus:ring-2 focus:ring-accent" />
-        <div className="mt-3 flex flex-wrap gap-3"><button disabled={props.busy || !props.draft.trim()} onClick={props.submit} className="rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40">{props.busy ? "DeepSeek 正在批改…" : activeTask.attempts.length ? "提交改写 ⌘⏎" : "提交批改 ⌘⏎"}</button><button disabled={props.busy} onClick={props.unlockHint} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold disabled:opacity-35">{activeTask.hintLevel === 0 ? "给我关键词" : activeTask.hintLevel === 1 ? "给我句型骨架" : "给我示范并分步重建"}</button></div>
+        <div className="mt-3 flex flex-wrap gap-3"><button disabled={props.busy || !props.draft.trim()} onClick={props.submit} className={`rounded-xl bg-foreground px-6 py-3 font-bold text-white disabled:opacity-40 ${props.busy ? "animate-pulse" : ""}`}>{props.busy ? "AI 老师批改中…" : activeTask.attempts.length ? "提交改写 ⌘⏎" : "提交批改 ⌘⏎"}</button><button disabled={props.busy} onClick={props.unlockHint} className="rounded-xl border border-black/10 px-5 py-3 text-sm font-bold disabled:opacity-35">{activeTask.hintLevel === 0 ? "给我关键词" : activeTask.hintLevel === 1 ? "给我句型骨架" : "给我示范并分步重建"}</button></div>
+        {props.busy && slowWait && <p className="mt-2 animate-pulse text-sm text-black/45">好文章值得多改一会儿，AI 老师还在仔细看…</p>}
         {props.error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{props.error}</div>}
         </>
         )}

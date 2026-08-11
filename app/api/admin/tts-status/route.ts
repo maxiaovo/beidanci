@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
 import { getTTSConfig } from "@/lib/settings";
 
 // 探测千问（DashScope）TTS 服务是否可用：用兼容模式 /models 验证 Token 连通性与鉴权
@@ -10,8 +10,11 @@ const DASHSCOPE_COMPAT_MODELS = "https://dashscope.aliyuncs.com/compatible-mode/
 export async function POST(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const body = await req.json().catch(() => ({}));
   const cfg = await getTTSConfig();

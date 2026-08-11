@@ -43,6 +43,36 @@ test("non-strict review keeps one requested mode per word", () => {
   assert.equal(tasks.every((task) => task.mode === "choice"), true);
 });
 
+test("strict review skips task types the server already marked as passed", () => {
+  const flagged = [{ id: "alpha", spellPassed: true }, { id: "bravo", choicePassed: true }, { id: "charlie" }];
+  const tasks = buildReviewTasks(flagged, true, "spell", () => 0.5);
+
+  assert.deepEqual(
+    tasks.filter((task) => task.word.id === "alpha").map((task) => task.mode),
+    ["choice"], // spellPassed 的词只出选择题
+  );
+  assert.deepEqual(
+    tasks.filter((task) => task.word.id === "bravo").map((task) => task.mode),
+    ["spell"], // choicePassed 的词只出拼写题
+  );
+  assert.deepEqual(
+    tasks
+      .filter((task) => task.word.id === "charlie")
+      .map((task) => task.mode)
+      .sort(),
+    ["choice", "spell"], // 无标志的词仍出两种题型
+  );
+  assert.equal(
+    tasks.some((task, index) => index > 0 && tasks[index - 1].word.id === task.word.id),
+    false,
+  );
+});
+
+test("strict review emits no tasks for words with both types passed", () => {
+  const tasks = buildReviewTasks([{ id: "alpha", spellPassed: true, choicePassed: true }], true, "spell", () => 0);
+  assert.equal(tasks.length, 0);
+});
+
 test("insertAtRandomSpot keeps at least one task between current index and the requeued task", () => {
   const queue = ["a", "b", "c", "d", "e"];
   // random() = 0 → 插到最早允许的位置（fromIdx + 2）

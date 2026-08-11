@@ -19,6 +19,9 @@ interface QuizWord {
   bookId?: string;
   bookName?: string;
   unitTitle?: string;
+  // 强检查复习时服务端下发的题型通过标志：已通过的题型不再出题
+  spellPassed?: boolean;
+  choicePassed?: boolean;
 }
 
 type QuizMode = "spell" | "choice";
@@ -130,6 +133,33 @@ function CheckInner() {
   // 复习补考设置（家长端配置）：补考需累计答对次数、循环补考（补考中再错清零重计）
   const [recoveryTarget, setRecoveryTarget] = useState(1);
   const [cyclicRecovery, setCyclicRecovery] = useState(false);
+
+  // 非阻断轻提示（几秒自动消失）：保存失败提醒、补考熔断提示等
+  const [toast, setToast] = useState("");
+  const toastTimerRef = useRef<number | null>(null);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(""), 4000);
+  }, []);
+
+  // 统一上报学习结果：
+  // - 自由练习自动带 practice=true（服务端只记日志不动 SRS 调度）
+  // - 每次带上会话开始时读取的 strict 快照（服务端优先用它，防管理员中途改开关导致两侧状态机分裂）
+  // - 返回 false（保存失败）时轻提示，不阻断答题流程
+  const reportProgress = useCallback(
+    async (
+      wordId: string,
+      progressMode: string,
+      result: "correct" | "wrong" | "giveup" | "defer",
+      options: { hadFailure?: boolean; recoveryPass?: boolean; attempt?: string } = {},
+    ) => {
+      const ok = await postProgress(wordId, progressMode, result, { practice: !isReview, strict, ...options });
+      if (!ok) showToast("记录未保存，请检查网络");
+      return ok;
+    },
+    [isReview, strict, showToast],
+  );
 
   // 拼写题状态
   const [input, setInput] = useState("");
@@ -292,12 +322,20 @@ function CheckInner() {
   }, [mode, idx]);
 
   // 复习模式：答错/放弃 → 该题型需补考累计答对 recoveryTarget 次（循环补考下已累计次数清零），
-  // 补考题随机重插进剩余队列
+  // 补考题随机重插进剩余队列；同一词连续失败达到熔断上限后移出本场（上报 defer 推到明日再复习）
   const applyRecoveryWrong = useCallback(
-    (w: QuizWord, m: QuizMode) => {
-      const state = recoveryRef.current.get(w.id) ?? initialRecovery(strict, quizMode ?? "spell");
-      const { next: nextState, requeue } = onWrong(state, m, strict, recoveryTarget, cyclicRecovery);
+    async (w: QuizWord, m: QuizMode) => {
+      const state =
+        recoveryRef.current.get(w.id) ??
+        initialRecovery(strict, quizMode ?? "spell", { spell: w.spellPassed, choice: w.choicePassed });
+      const { next: nextState, requeue, tripped } = onWrong(state, m, strict, recoveryTarget, cyclicRecovery);
       recoveryRef.current.set(w.id, nextState);
+      if (tripped) {
+        // 熔断：该词移出本场队列，推到明日 0 点再复习（不动 stage，lapses+1）
+        const ok = await reportProgress(w.id, m === "spell" ? "check-spell" : "check-choice", "defer");
+        if (ok) showToast("这个词今天先到这里，明天再练");
+        return;
+      }
       setTasks((prev) =>
         requeue.reduce(
           (acc, tm) =>
@@ -316,19 +354,21 @@ function CheckInner() {
         ),
       );
     },
-    [strict, quizMode, idx, recoveryTarget, cyclicRecovery],
+    [strict, quizMode, idx, recoveryTarget, cyclicRecovery, reportProgress, showToast],
   );
 
   // 复习模式：答对 → 累计补考答对次数；中间次只留记录不晋级（recoveryPass），
   // 凑满次数或一次过时按普通 correct 上报晋级
   const reportReviewCorrect = useCallback(
     async (w: QuizWord, m: QuizMode) => {
-      const state = recoveryRef.current.get(w.id) ?? initialRecovery(strict, quizMode ?? "spell");
+      const state =
+        recoveryRef.current.get(w.id) ??
+        initialRecovery(strict, quizMode ?? "spell", { spell: w.spellPassed, choice: w.choicePassed });
       const { next: nextState, report } = onCorrect(state, m);
       recoveryRef.current.set(w.id, nextState);
       const progressMode = m === "spell" ? "check-spell" : "check-choice";
       if (report === "recoveryPass") {
-        await postProgress(w.id, progressMode, "correct", { recoveryPass: true });
+        await reportProgress(w.id, progressMode, "correct", { recoveryPass: true });
         setTasks((prev) =>
           insertAtRandomSpot(
             prev,
@@ -343,10 +383,10 @@ function CheckInner() {
           ),
         );
       } else {
-        await postProgress(w.id, progressMode, "correct");
+        await reportProgress(w.id, progressMode, "correct");
       }
     },
-    [strict, quizMode, idx],
+    [strict, quizMode, idx, reportProgress],
   );
 
   const next = useCallback(async () => {
@@ -390,14 +430,14 @@ function CheckInner() {
       playDing();
       setSpellState("correct");
       if (isReview) await reportReviewCorrect(word, "spell");
-      else await postProgress(word.id, "check-spell", "correct", { hadFailure: lapsedRef.current.has(word.id) });
+      else await reportProgress(word.id, "check-spell", "correct", { hadFailure: lapsedRef.current.has(word.id) });
       setTimeout(next, 700);
     } else {
       playBuzz();
       setSpellState("wrong");
       setShake((s) => s + 1);
-      await postProgress(word.id, "check-spell", "wrong", { attempt: answer });
-      if (isReview) applyRecoveryWrong(word, "spell");
+      await reportProgress(word.id, "check-spell", "wrong", { attempt: answer });
+      if (isReview) await applyRecoveryWrong(word, "spell");
       else lapsedRef.current.add(word.id);
       // 答错不允许原地重打：展示答案，点"下一个"继续
       setShowAnswer(true);
@@ -411,13 +451,13 @@ function CheckInner() {
     setShowAnswer(true);
     setChoiceAnswered(mode === "choice");
     const attempt = mode === "spell" ? input.trim().toLowerCase() : "";
-    await postProgress(
+    await reportProgress(
       word.id,
       mode === "spell" ? "check-spell" : "check-choice",
       "giveup",
       attempt ? { attempt } : {},
     );
-    if (isReview) applyRecoveryWrong(word, mode);
+    if (isReview) await applyRecoveryWrong(word, mode);
     else lapsedRef.current.add(word.id);
   }
 
@@ -428,13 +468,13 @@ function CheckInner() {
       setChoiceAnswered(true);
       playDing();
       if (isReview) await reportReviewCorrect(word, "choice");
-      else await postProgress(word.id, "check-choice", "correct", { hadFailure: lapsedRef.current.has(word.id) });
+      else await reportProgress(word.id, "check-choice", "correct", { hadFailure: lapsedRef.current.has(word.id) });
       setTimeout(next, 500);
     } else {
       playBuzz();
       setWrongPicks((p) => [...p, opt]);
-      await postProgress(word.id, "check-choice", "wrong");
-      if (isReview) applyRecoveryWrong(word, "choice");
+      await reportProgress(word.id, "check-choice", "wrong");
+      if (isReview) await applyRecoveryWrong(word, "choice");
       else lapsedRef.current.add(word.id);
       // 答错即揭示答案并进入下一题（补考已随机重插）
       setChoiceAnswered(true);
@@ -548,6 +588,15 @@ function CheckInner() {
     );
   }
 
+  // 自由练习：没词时直接展示空态，不让用户先选模式
+  if (!isReview && words.length === 0) {
+    return (
+      <div className="p-10 text-center text-black/40">
+        暂无可练习的单词，先去 <Link href="/learn" className="text-blue-500 underline">背单词</Link> 吧
+      </div>
+    );
+  }
+
   // 自由练习的模式选择
   if (!isReview && quizMode === null) {
     return (
@@ -617,7 +666,7 @@ function CheckInner() {
       <div className="w-full flex items-center justify-between text-sm text-black/50">
         <span>
           {isReview ? "📅 复习检查" : "💪 自由练习"} ·{" "}
-          {strict ? `强检查 ${mode === "spell" ? "拼写" : "选择"}` : mode === "spell" ? "拼写" : "选择"}
+          {strict ? `双重检查 ${mode === "spell" ? "拼写" : "选择"}` : mode === "spell" ? "拼写" : "选择"}
           {task?.recovery && (
             <span className="text-orange-500">
               {" · 补考"}
@@ -723,6 +772,12 @@ function CheckInner() {
         >
           跳过本次复习（家长会看到记录，未复习的词会累积到下次）
         </button>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-black/80 text-white text-sm rounded-xl px-5 py-2.5 shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   );

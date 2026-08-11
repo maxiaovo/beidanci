@@ -34,8 +34,10 @@ export function insertAtRandomSpot<T>(tasks: T[], task: T, fromIdx: number, rand
  * Builds the whole review queue before the session begins.
  * Strict review includes both task types, globally interleaves them, and keeps
  * the same word apart whenever the queue contains at least two words.
+ * strict 模式下词可能带有服务端下发的 spellPassed/choicePassed 标志，
+ * 已通过的题型不再出题（只补未过的题型）。
  */
-export function buildReviewTasks<T extends { id: string }>(
+export function buildReviewTasks<T extends { id: string; spellPassed?: boolean; choicePassed?: boolean }>(
   words: T[],
   strict: boolean,
   mode: ReviewTaskMode,
@@ -44,8 +46,8 @@ export function buildReviewTasks<T extends { id: string }>(
   if (!strict) return shuffle(words, random).map((word) => ({ word, mode }));
 
   const allTasks = words.flatMap((word) => [
-    { word, mode: "spell" as const },
-    { word, mode: "choice" as const },
+    ...(word.spellPassed ? [] : [{ word, mode: "spell" as const }]),
+    ...(word.choicePassed ? [] : [{ word, mode: "choice" as const }]),
   ]);
   if (words.length < 2) return allTasks;
 
@@ -56,15 +58,23 @@ export function buildReviewTasks<T extends { id: string }>(
   }
 
   // Deterministic fallback for pathological/injected random generators.
+  // 每种题型只出一次；只缺一种题型的词不出第二题。
   const order = shuffle(words, random);
-  const first = order.map((word, index) => ({
-    word,
-    mode: (index % 2 === 0 ? "spell" : "choice") as ReviewTaskMode,
-  }));
-  const secondOrder = order;
-  const second = secondOrder.map((word) => {
-    const firstTask = first.find((task) => task.word.id === word.id)!;
-    return { word, mode: firstTask.mode === "spell" ? ("choice" as const) : ("spell" as const) };
+  const first: ReviewTask<T>[] = [];
+  const second: ReviewTask<T>[] = [];
+  order.forEach((word, index) => {
+    const modes: ReviewTaskMode[] = [
+      ...(word.spellPassed ? [] : (["spell"] as const)),
+      ...(word.choicePassed ? [] : (["choice"] as const)),
+    ];
+    if (modes.length === 2) {
+      // 交替分配首个题型，第二个题型放到后半场，保证同词不相邻
+      const [a, b] = index % 2 === 0 ? modes : [modes[1], modes[0]];
+      first.push({ word, mode: a });
+      second.push({ word, mode: b });
+    } else if (modes.length === 1) {
+      first.push({ word, mode: modes[0] });
+    }
   });
   return [...first, ...second];
 }

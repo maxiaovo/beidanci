@@ -9,9 +9,12 @@ import type { WritingPrompt } from "@/lib/writing-types";
 const MODES = ["diagnostic", "topic", "generated", "free", "translation", "imitation", "review"];
 
 function aiError(error: unknown) {
-  const message = error instanceof Error ? error.message : "AI 服务暂时不可用";
-  const status = error instanceof DeepSeekRequestError && message.includes("正在处理") ? 409 : 502;
-  return NextResponse.json({ error: message }, { status });
+  // 409 是 withWritingAiLock 的固定提示，可安全展示；其余错误细节不外泄，只记服务端日志
+  if (error instanceof DeepSeekRequestError && error.message.includes("正在处理")) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+  console.error("写作会话创建失败:", error);
+  return NextResponse.json({ error: "AI 服务暂时不可用，请稍后重试" }, { status: 502 });
 }
 
 export async function POST(req: Request) {

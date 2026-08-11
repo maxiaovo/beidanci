@@ -78,6 +78,8 @@ function LearnInner() {
   const [highlightColor, setHighlightColor] = useState<string | null>(null); // 例句目标词高亮颜色
   const [appearance, setAppearance] = useState<LearnAppearance>(DEFAULT_APPEARANCE); // 学习页外观（全局设置）
   const [msgQueue, setMsgQueue] = useState<ParentMessage[]>([]); // 家长留言弹窗队列
+  const [saveTip, setSaveTip] = useState(false); // 进度上报失败的非阻断提示
+  const saveTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shownMsgRef = useRef<Set<string>>(new Set()); // 本次会话已弹过的留言
   const wordMsgsRef = useRef<ParentMessage[]>([]); // word 触发的留言
   const msgTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -160,6 +162,13 @@ function LearnInner() {
 
   const word: StudyWord | undefined = words[idx];
 
+  // postProgress 返回 false（断网等）时的轻提示：几秒自动消失，不阻断学习流程
+  function notifySaveFailed() {
+    setSaveTip(true);
+    if (saveTipTimer.current) clearTimeout(saveTipTimer.current);
+    saveTipTimer.current = setTimeout(() => setSaveTip(false), 4000);
+  }
+
   // 进入下一个词（或完成）：自测失败的词已重排到队尾，words.length 会增长
   const advanceWord = useCallback(() => {
     if (idx + 1 >= words.length) {
@@ -175,7 +184,8 @@ function LearnInner() {
     if (!word) return;
     if (!passedRef.current.has(word.id)) {
       passedRef.current.add(word.id);
-      await postProgress(word.id, "learn", "correct");
+      const ok = await postProgress(word.id, "learn", "correct");
+      if (!ok) notifySaveFailed();
     }
     advanceWord();
   }, [word, advanceWord]);
@@ -199,7 +209,8 @@ function LearnInner() {
       playBuzz();
       setStState("wrong");
       setStShake((s) => s + 1);
-      await postProgress(word.id, "learn", "wrong");
+      const ok = await postProgress(word.id, "learn", "wrong");
+      if (!ok) notifySaveFailed();
       requeueWord();
       setStRevealed(true);
     }
@@ -209,7 +220,8 @@ function LearnInner() {
   async function giveUpSelfTest() {
     if (!word || stRevealed || stState === "correct") return;
     setStRevealed(true);
-    await postProgress(word.id, "learn", "giveup");
+    const ok = await postProgress(word.id, "learn", "giveup");
+    if (!ok) notifySaveFailed();
     requeueWord();
   }
 
@@ -251,6 +263,10 @@ function LearnInner() {
     const backKeys = ["ArrowUp", "ArrowLeft", "PageUp"];
     const nextKeys = ["ArrowDown", "ArrowRight", "PageDown"];
     function onKey(e: KeyboardEvent) {
+      // 焦点在按钮/链接/输入框等交互元素上时不做全局翻页（防止 Tab 到链接/复选框后按回车意外翻页）；
+      // 打字训练的隐藏输入框（data-typing-trainer）除外：临摹阶段的 Shift+方向键导航需要冒泡到这里
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("button, a, input, label, select") && !el.hasAttribute("data-typing-trainer")) return;
       const p = phaseRef.current;
       const inTrace = p === "trace" || p === "traceEx1" || p === "traceEx2";
       if (inTrace) {
@@ -377,6 +393,11 @@ function LearnInner() {
       onClick={onTapNav}
     >
       <MessageOverlay queue={msgQueue} onClose={(id) => setMsgQueue((q) => q.filter((m) => m.id !== id))} />
+      {saveTip && (
+        <div className="pointer-events-none fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-xl bg-black/80 px-4 py-2 text-sm text-white shadow-lg">
+          记录未保存，请检查网络
+        </div>
+      )}
       {/* 顶部进度 + 扩展模式开关 + 退出 */}
       <div className="w-full">
         <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-2 text-sm text-black/50">
@@ -604,7 +625,7 @@ function LearnInner() {
         </button>
         <div className="text-center text-sm text-black/42">{PHASE_HINT[phase]}</div>
         {inTrace ? (
-          <span className="rounded-xl bg-accent/12 px-5 py-2.5 text-sm font-bold text-foreground">输入完成后按回车</span>
+          <span className="rounded-xl bg-accent/12 px-5 py-2.5 text-sm font-bold text-foreground">输入完成后按回车或点「下一步」</span>
         ) : phase === "selftest" ? (
           <span className="rounded-xl bg-accent/12 px-5 py-2.5 text-sm font-bold text-foreground">默写单词后按回车</span>
         ) : (

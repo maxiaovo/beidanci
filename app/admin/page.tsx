@@ -59,6 +59,7 @@ interface AdminBook {
   createdAt: string;
   units: number;
   sharedWithAll: boolean;
+  hasCover: boolean;
   owner: { id: string; username: string };
   assignedTo: { id: string; username: string }[];
 }
@@ -162,6 +163,9 @@ export default function AdminPage() {
   const [newTarget, setNewTarget] = useState(20);
   const [reviewTarget, setReviewTarget] = useState(100);
   const [saved, setSaved] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+  // 切换用户时记录区的加载态，避免标题已换、记录仍是上一个用户的
+  const [logsLoading, setLogsLoading] = useState(false);
   const [hlColor, setHlColor] = useState("#e11d48");
   const [hlSaved, setHlSaved] = useState(false);
   // 学习页外观（全局设置，Setting 表）
@@ -182,6 +186,13 @@ export default function AdminPage() {
   const [selUsers, setSelUsers] = useState<Set<string>>(new Set());
   const [assignAllOpt, setAssignAllOpt] = useState(false);
   const [assignMsg, setAssignMsg] = useState("");
+  // 词书编辑（改名 + 封皮）
+  const [editBook, setEditBook] = useState<AdminBook | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCover, setEditCover] = useState<File | null>(null);
+  const [editRemoveCover, setEditRemoveCover] = useState(false);
+  const [editMsg, setEditMsg] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState("");
   const [avatarVer, setAvatarVer] = useState(0);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -653,21 +664,33 @@ export default function AdminPage() {
   async function toggleStrict() {
     const nextVal = !strict;
     setStrict(nextVal);
-    await fetch("/api/admin/config", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ strictCheck: nextVal }),
-    });
+    try {
+      const r = await fetch("/api/admin/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strictCheck: nextVal }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setStrict(!nextVal); // 保存失败，回滚开关
+      alert("强检查设置保存失败，请重试");
+    }
   }
 
   async function toggleAllowSkip() {
     const nextVal = !allowSkip;
     setAllowSkip(nextVal);
-    await fetch("/api/admin/config", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ allowSkipReview: nextVal }),
-    });
+    try {
+      const r = await fetch("/api/admin/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowSkipReview: nextVal }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setAllowSkip(!nextVal); // 保存失败，回滚开关
+      alert("跳过复习设置保存失败，请重试");
+    }
   }
 
   // ---- 家长留言 ----
@@ -796,6 +819,35 @@ export default function AdminPage() {
     setTimeout(() => setAssignMsg(""), 3000);
   }
 
+  // 打开词书编辑弹窗
+  function openEditBook(b: AdminBook) {
+    setEditBook(b);
+    setEditName(b.name);
+    setEditCover(null);
+    setEditRemoveCover(false);
+    setEditMsg("");
+  }
+
+  // 保存词书修改：显示名（纯展示，关联走 id 不影响学习数据）+ 封皮上传/清除
+  async function saveEditBook() {
+    if (!editBook) return;
+    setSavingEdit(true);
+    setEditMsg("");
+    const form = new FormData();
+    if (editName.trim() && editName.trim() !== editBook.name) form.append("name", editName.trim());
+    if (editCover) form.append("cover", editCover);
+    if (!editCover && editRemoveCover) form.append("removeCover", "true");
+    const r = await fetch(`/api/books/${editBook.id}`, { method: "PATCH", body: form });
+    const d = await r.json().catch(() => ({}));
+    setSavingEdit(false);
+    if (r.ok) {
+      setEditBook(null);
+      load();
+    } else {
+      setEditMsg(d.error || "保存失败");
+    }
+  }
+
   async function uploadAvatar(file: File) {
     if (!selected) return;
     setAvatarMsg("");
@@ -817,11 +869,17 @@ export default function AdminPage() {
   async function toggleReg() {
     const next = !regOpen;
     setRegOpen(next);
-    await fetch("/api/admin/config", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ registrationOpen: next }),
-    });
+    try {
+      const r = await fetch("/api/admin/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registrationOpen: next }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setRegOpen(!next); // 保存失败，回滚开关
+      alert("注册开关保存失败，请重试");
+    }
   }
 
   async function createUser(e: React.FormEvent) {
@@ -847,6 +905,7 @@ export default function AdminPage() {
 
   async function resetPassword() {
     if (!selected || !resetPwd) return;
+    if (!window.confirm(`确定将 ${selected.username} 的密码重置为「${resetPwd}」？`)) return;
     const r = await fetch(`/api/admin/users/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -866,6 +925,10 @@ export default function AdminPage() {
     setResetPwd("");
     setResetMsg("");
     setBindMsg("");
+    setSaveErr("");
+    setLogs([]);
+    setSkips([]);
+    setLogsLoading(true);
     // 家长：回显已绑定的孩子
     setChildSel(new Set((users ?? []).filter((x) => x.parentId === u.id).map((x) => x.id)));
     const r = await fetch(`/api/admin/users/${u.id}`);
@@ -874,6 +937,7 @@ export default function AdminPage() {
       setLogs(d.logs);
       setSkips(d.skips ?? []);
     }
+    setLogsLoading(false);
   }
 
   // 保存家长与孩子的绑定关系
@@ -893,11 +957,28 @@ export default function AdminPage() {
 
   async function saveTargets() {
     if (!selected) return;
-    await fetch(`/api/admin/users/${selected.id}`, {
+    setSaveErr("");
+    const nt = Number(newTarget);
+    const rt = Number(reviewTarget);
+    if (![nt, rt].every((n) => Number.isFinite(n))) {
+      setSaveErr("请输入有效数字");
+      return;
+    }
+    // 夹取到合法区间（与输入框 min/max 一致）
+    const clampedNew = Math.min(200, Math.max(1, Math.round(nt)));
+    const clampedReview = Math.min(500, Math.max(1, Math.round(rt)));
+    setNewTarget(clampedNew);
+    setReviewTarget(clampedReview);
+    const r = await fetch(`/api/admin/users/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dailyNewTarget: Number(newTarget), dailyReviewTarget: Number(reviewTarget) }),
+      body: JSON.stringify({ dailyNewTarget: clampedNew, dailyReviewTarget: clampedReview }),
     });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setSaveErr(d.error || "保存失败，请重试");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     load();
@@ -1139,6 +1220,7 @@ export default function AdminPage() {
                   >
                     {saved ? "✓ 已保存" : "保存修改"}
                   </button>
+                  {saveErr && <p className="text-sm text-red-500">{saveErr}</p>}
                 </div>
                 <h2 className="font-bold mt-5 mb-3">例句高亮色</h2>
                 <div className="flex flex-col gap-3">
@@ -1231,7 +1313,9 @@ export default function AdminPage() {
           {selected.role !== "parent" && (
           <div className="bg-white rounded-2xl shadow p-5 max-h-[50vh] overflow-y-auto">
             <h2 className="font-bold mb-3">最近记录</h2>
-            {logs.length === 0 && skips.length === 0 ? (
+            {logsLoading ? (
+              <p className="text-sm text-black/40">加载中…</p>
+            ) : logs.length === 0 && skips.length === 0 ? (
               <p className="text-sm text-black/40">还没有学习记录</p>
             ) : (
               <div className="flex flex-col gap-2 text-sm">
@@ -1405,6 +1489,85 @@ export default function AdminPage() {
       </section>
       )}
 
+      {/* 词书编辑弹窗：显示名 + 封皮 */}
+      {editBook && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          onClick={() => setEditBook(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-book-title"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="edit-book-title" className="text-xl font-bold mb-1">编辑单词书</h2>
+            <p className="text-xs text-black/45 mb-4">显示名只是展示层修改，不影响所有用户的学习记录与计划。</p>
+            <label className="block text-sm text-black/60 mb-1">显示名</label>
+            <input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              maxLength={100}
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-4"
+            />
+            <label className="block text-sm text-black/60 mb-1">封皮图片（jpg / png / webp，≤ 8MB）</label>
+            <div className="flex items-center gap-4 mb-2">
+              <span className="block h-24 w-[4.5rem] shrink-0 overflow-hidden rounded-xl border border-black/10 bg-black/5">
+                {editCover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={URL.createObjectURL(editCover)} alt="新封皮预览" className="h-full w-full object-cover" />
+                ) : editBook.hasCover && !editRemoveCover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={`/api/books/${editBook.id}/cover`} alt="当前封皮" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center px-1 text-center text-[11px] font-bold text-black/40">
+                    {editName || editBook.name}
+                  </span>
+                )}
+              </span>
+              <div className="flex flex-col gap-2">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => {
+                    setEditCover(e.target.files?.[0] ?? null);
+                    setEditRemoveCover(false);
+                  }}
+                  className="text-xs"
+                />
+                {editBook.hasCover && !editCover && (
+                  <label className="flex items-center gap-1.5 text-xs text-black/60">
+                    <input
+                      type="checkbox"
+                      checked={editRemoveCover}
+                      onChange={(e) => setEditRemoveCover(e.target.checked)}
+                    />
+                    清除当前封皮（改用文字封面）
+                  </label>
+                )}
+              </div>
+            </div>
+            {editMsg && <p className="text-sm text-red-500 mb-2">{editMsg}</p>}
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                onClick={() => setEditBook(null)}
+                className="rounded-lg border px-4 py-2 text-sm text-black/60 hover:bg-black/[.04]"
+              >
+                取消
+              </button>
+              <button
+                onClick={saveEditBook}
+                disabled={savingEdit || !editName.trim()}
+                className="rounded-lg bg-foreground px-5 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40"
+              >
+                {savingEdit ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 词书分配 */}
       {tab === "manage" && (
       <section id="assign" className="bg-white rounded-2xl shadow p-5">
@@ -1448,6 +1611,17 @@ export default function AdminPage() {
                           : "未分配（仅自己可见）"}
                     </span>
                   </span>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openEditBook(b);
+                    }}
+                    className="ml-2 shrink-0 text-xs border rounded-lg px-2.5 py-1.5 text-black/60 hover:bg-black/[.04]"
+                    title="修改显示名与封皮"
+                  >
+                    ✏️ 编辑
+                  </button>
                   <button
                     onClick={(e) => {
                       e.preventDefault();

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { AUDIO_DIR } from "@/lib/tts";
 import { resumeImport } from "@/lib/import-runner";
@@ -10,8 +10,11 @@ import { resumeImport } from "@/lib/import-runner";
 export async function POST() {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const words = await prisma.word.findMany({
     where: { OR: [{ audioWord: null }, { audioEx1: null }, { audioEx2: null }] },

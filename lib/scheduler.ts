@@ -10,7 +10,8 @@ const STAGE_INTERVALS = [
   60 * 24 * 3600 * 1000,
 ];
 
-export const MAX_STAGE = STAGE_INTERVALS.length; // 8 = 已掌握
+// 最高 stage：间隔封顶 60 天，到达后不会"毕业"，仍按 60 天周期循环复习
+export const MAX_STAGE = STAGE_INTERVALS.length;
 
 export function nextReviewDate(stage: number, from = new Date()): Date {
   const idx = Math.min(Math.max(stage, 0), STAGE_INTERVALS.length - 1);

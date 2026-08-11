@@ -1,7 +1,8 @@
 import { advanceStage, nextReviewDate } from "@/lib/scheduler";
 
 export type ProgressMode = "learn" | "check-spell" | "check-choice";
-export type ProgressResult = "correct" | "wrong" | "giveup";
+// defer（补考熔断）由 progress 路由提前处理，不会进入 decideProgress
+export type ProgressResult = "correct" | "wrong" | "giveup" | "defer";
 
 export interface ExistingProgress {
   stage: number;

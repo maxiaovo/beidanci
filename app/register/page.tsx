@@ -25,13 +25,18 @@ export default function RegisterPage() {
   function pickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     setAvatar(f);
-    if (f) {
-      const url = URL.createObjectURL(f);
-      setPreview(url);
-    } else {
-      setPreview("");
-    }
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old); // 换图时释放上一个预览
+      return f ? URL.createObjectURL(f) : "";
+    });
   }
+
+  // 组件卸载时释放头像预览的 objectURL
+  useEffect(() => {
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +59,14 @@ export default function RegisterPage() {
     } else {
       setError(data.error || "注册失败");
     }
+  }
+
+  if (regOpen === null) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center">
+        <div className="text-black/40">加载中…</div>
+      </div>
+    );
   }
 
   if (regOpen === false) {
@@ -110,8 +123,9 @@ export default function RegisterPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
         {error && <p className="text-red-500 text-sm">{error}</p>}
+        {!avatar && <p className="text-xs text-center text-black/40">请上传头像</p>}
         <button
-          disabled={loading}
+          disabled={loading || !avatar}
           className="bg-foreground text-white rounded-lg py-2 font-medium hover:opacity-90 disabled:opacity-50"
         >
           {loading ? "注册中…" : "注册"}

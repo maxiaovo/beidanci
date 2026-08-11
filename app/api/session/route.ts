@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser, isParent } from "@/lib/session";
-import { bookVisibleWhere } from "@/lib/book-access";
+import { bookVisibleWhere, bookEnrolledWhere } from "@/lib/book-access";
 import { isAllowSkipReview, getLearnAppearance } from "@/lib/settings";
+import { isReviewGateOpen } from "@/lib/study-gate";
 
 function todayStart(): Date {
   const d = new Date();
@@ -54,47 +55,64 @@ export async function GET(req: Request) {
   const start = todayStart();
   const bookParam = new URL(req.url).searchParams.get("book");
 
+  // 跳过语义：取今天最近一次跳过复习的时刻，跳过之前到期的词被赦免，之后新到期的仍拦截
+  const lastSkip = await prisma.reviewSkip.findFirst({
+    where: { userId: user.id, module: "words", createdAt: { gte: start } },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  const dueFilter = {
+    userId: user.id,
+    nextReviewAt: { lte: now, ...(lastSkip ? { gt: lastSkip.createdAt } : {}) },
+  };
+
   // 到期复习词（今日额度内）
   const dueProgress = await prisma.wordProgress.findMany({
-    where: { userId: user.id, nextReviewAt: { lte: now } },
+    where: dueFilter,
     orderBy: { nextReviewAt: "asc" },
     take: user.dailyReviewTarget,
     include: { word: { select: wordSelect } },
   });
+  // 真实到期总数（不受 take 截断），供客户端展示积压
+  const dueTotal = await prisma.wordProgress.count({ where: dueFilter });
 
-  // 今日已完成的复习数（用于显示进度）
+  // 今日已完成的复习数（用于显示进度与门禁放行）
   const reviewedWordsToday = await prisma.studyLog.findMany({
     where: { userId: user.id, mode: { startsWith: "check" }, result: "correct", createdAt: { gte: start } },
     distinct: ["wordId"],
     select: { wordId: true },
   });
   const reviewsDoneToday = reviewedWordsToday.length;
-  const learnedToday = await prisma.studyLog.count({
-    where: { userId: user.id, mode: "learn", createdAt: { gte: start } },
+  // 今日已学会的新词数：只计 learn/correct 的 distinct wordId，自测失败重试不烧配额
+  const learnedWordsToday = await prisma.studyLog.findMany({
+    where: { userId: user.id, mode: "learn", result: "correct", createdAt: { gte: start } },
+    distinct: ["wordId"],
+    select: { wordId: true },
   });
+  const learnedToday = learnedWordsToday.length;
 
   const reviews = dueProgress.map((p) => ({
     progressId: p.id,
     stage: p.stage,
+    spellPassed: p.spellPassed,
+    choicePassed: p.choicePassed,
     ...serializeWord(p.word as never),
   }));
 
-  // ?book= 校验：不可见时视为无效，对应新词为空（不报错）
+  // ?book= 校验：可见且在学才有效，否则对应新词为空（不报错）
   let bookFilterId: string | null = null;
   if (bookParam) {
     const visible = await prisma.book.findFirst({
-      where: { id: bookParam, ...bookVisibleWhere(user.id) },
+      where: { id: bookParam, ...bookVisibleWhere(user.id), ...bookEnrolledWhere(user.id) },
       select: { id: true },
     });
     if (visible) bookFilterId = bookParam;
   }
 
-  // 新词：复习清完（或当天已跳过复习）才下发
+  // 新词：复习门禁放开（到期队列空，或今日已完成复习配额）才下发
   let newWords: ReturnType<typeof serializeWord>[] = [];
   const plansOut: PlanOut[] = [];
-  const skippedToday =
-    (await prisma.reviewSkip.count({ where: { userId: user.id, module: "words", createdAt: { gte: start } } })) > 0;
-  const reviewsCleared = reviews.length === 0 || skippedToday;
+  const reviewsCleared = isReviewGateOpen(dueTotal, reviewsDoneToday, user.dailyReviewTarget);
 
   const plans = await prisma.bookPlan.findMany({
     where: { userId: user.id },
@@ -104,23 +122,23 @@ export async function GET(req: Request) {
 
   if (plans.length > 0) {
     // 有计划：按计划逐书配额下发新词
-    const learned = await prisma.wordProgress.findMany({
-      where: { userId: user.id },
-      select: { wordId: true },
-    });
-    const learnedIds = learned.map((l) => l.wordId);
-    const unlearnedCond = learnedIds.length ? { id: { notIn: learnedIds } } : {};
+    // 未学 = 没有该用户的 WordProgress（learn 失败不建进度，词自然留在新词池）
+    const unlearnedCond = { progresses: { none: { userId: user.id } } };
 
     for (const plan of plans) {
-      // 今日该本书已学新词数
-      const doneToday = await prisma.studyLog.count({
+      // 今日该本书已学会的新词数（learn/correct 的 distinct wordId）
+      const doneTodayWords = await prisma.studyLog.findMany({
         where: {
           userId: user.id,
           mode: "learn",
+          result: "correct",
           createdAt: { gte: start },
           word: { unit: { bookId: plan.bookId } },
         },
+        distinct: ["wordId"],
+        select: { wordId: true },
       });
+      const doneToday = doneTodayWords.length;
 
       let quota: number;
       if (plan.amountType === "words") {
@@ -152,7 +170,7 @@ export async function GET(req: Request) {
       if (reviewsCleared && remaining > 0 && wantThisBook) {
         const fresh = await prisma.word.findMany({
           where: {
-            id: learnedIds.length ? { notIn: learnedIds } : undefined,
+            ...unlearnedCond,
             unit: { bookId: plan.bookId },
           },
           orderBy: [{ unit: { orderIndex: "asc" } }, { orderIndex: "asc" }],
@@ -169,7 +187,7 @@ export async function GET(req: Request) {
       if (remaining > 0) {
         const fresh = await prisma.word.findMany({
           where: {
-            id: learnedIds.length ? { notIn: learnedIds } : undefined,
+            ...unlearnedCond,
             unit: { bookId: bookFilterId },
           },
           orderBy: [{ unit: { orderIndex: "asc" } }, { orderIndex: "asc" }],
@@ -180,22 +198,18 @@ export async function GET(req: Request) {
       }
     }
   } else if (reviewsCleared) {
-    // 无计划：保持原全局 dailyNewTarget 行为
+    // 无计划：保持原全局 dailyNewTarget 行为，但只从"在学"的书里发新词
     const remaining = Math.max(0, user.dailyNewTarget - learnedToday);
     const bookBlocked = bookParam !== null && bookFilterId === null;
     if (remaining > 0 && !bookBlocked) {
-      const learned = await prisma.wordProgress.findMany({
-        where: { userId: user.id },
-        select: { wordId: true },
-      });
-      const learnedIds = learned.map((l) => l.wordId);
       const fresh = await prisma.word.findMany({
         where: {
-          id: learnedIds.length ? { notIn: learnedIds } : undefined,
+          progresses: { none: { userId: user.id } },
           unit: {
             book: {
               ...(bookFilterId ? { id: bookFilterId } : {}),
               ...bookVisibleWhere(user.id),
+              ...bookEnrolledWhere(user.id),
               status: "ready",
             },
           },
@@ -216,6 +230,7 @@ export async function GET(req: Request) {
     appearance: await getLearnAppearance(), // 学习页外观（全局设置）
     stats: {
       dueCount: reviews.length,
+      dueTotal,
       reviewsDoneToday,
       learnedToday,
       dailyNewTarget: user.dailyNewTarget,

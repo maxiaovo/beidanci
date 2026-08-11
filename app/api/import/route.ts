@@ -3,6 +3,10 @@ import { prisma } from "@/lib/db";
 import { getSessionUser, isParent } from "@/lib/session";
 import { extractText, splitIntoUnits } from "@/lib/parsers";
 import { enqueueImport } from "@/lib/import-runner";
+import { saveBookCover, validateCover } from "@/lib/book-covers";
+
+// 导入文件整体读入内存，限制大小防止 OOM
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
@@ -12,6 +16,9 @@ export async function POST(req: Request) {
   const form = await req.formData();
   const file = form.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "缺少文件" }, { status: 400 });
+  if (file.size > MAX_FILE_SIZE) {
+    return NextResponse.json({ error: "文件不能超过 20MB，请拆分后再导入" }, { status: 400 });
+  }
 
   // 管理员可在导入时分配给用户：assignAll=true 或 assignTo=[userId,...]
   let assignAll = false;
@@ -32,6 +39,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
+  // 封皮：导入者可选上传（formData: cover），先校验再落库，避免书籍记录半成品
+  const cover = form.get("cover");
+  const coverFile = cover instanceof File && cover.size > 0 ? cover : null;
+  if (coverFile) {
+    const invalid = validateCover(coverFile);
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+  }
+
   const defaultName = file.name.replace(/\.[^.]+$/, "").replace(/_/g, " ");
   const bookName = (form.get("bookName") as string | null)?.trim() || defaultName;
 
@@ -45,12 +60,25 @@ export async function POST(req: Request) {
       rawUnits: JSON.stringify(units), // 存原始文本，导入中断后可断点续传
     },
   });
+
+  // 封皮落盘（已通过校验）
+  if (coverFile) {
+    const saved = await saveBookCover(book.id, coverFile);
+    await prisma.book.update({ where: { id: book.id }, data: { coverFile: saved } });
+  }
+
   if (assignTo.length) {
     // 新书无历史分配，不会重复
     await prisma.bookAssignment.createMany({
       data: assignTo.map((userId) => ({ bookId: book.id, userId })),
     });
   }
+
+  // 导入者与被分配者自动加入学习
+  const enrollUserIds = [...new Set([user.id, ...assignTo])];
+  await prisma.bookEnrollment.createMany({
+    data: enrollUserIds.map((userId) => ({ bookId: book.id, userId })),
+  });
 
   // 后台串行队列跑分析+音频，前端轮询状态
   enqueueImport(book.id, units);

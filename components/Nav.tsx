@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookOpen,
-  Books,
   CheckCircle,
   House,
   Lock,
@@ -28,16 +27,17 @@ interface SiteCfg {
 
 const TABS = [
   { href: "/", icon: House, label: "首页" },
-  { href: "/words", icon: Books, label: "单词书" },
+  { href: "/writing", icon: PencilLine, label: "写作" },
   { href: "/learn", icon: BookOpen, label: "背单词" },
   { href: "/check", icon: CheckCircle, label: "检查" },
   { href: "/me", icon: UserCircle, label: "我的" },
 ];
 
 // 家长不参与学习，只看孩子；学习入口可见但锁定，点击提示
-const PARENT_LOCKED_DESKTOP = ["首页", "写作", "单词书", "背单词", "检查", "导入"];
+const PARENT_LOCKED_DESKTOP = ["首页", "写作", "背单词", "检查", "导入"];
 const PARENT_TABS = [
   { href: "/parent", icon: Student, label: "孩子", locked: false },
+  { href: "/writing", icon: PencilLine, label: "写作", locked: true },
   { href: "/learn", icon: BookOpen, label: "背单词", locked: true },
   { href: "/check", icon: CheckCircle, label: "检查", locked: true },
   { href: "/me", icon: UserCircle, label: "我的", locked: false },
@@ -122,7 +122,6 @@ export default function Nav() {
           <nav className="hidden lg:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
             <Link href="/" className={linkCls("/")}>首页</Link>
             <Link href="/writing" className={linkCls("/writing")}><span className="inline-flex items-center gap-1"><PencilLine size={15} />写作</span></Link>
-            <Link href="/words" className={linkCls("/words")}>单词书</Link>
             <Link href="/learn" className={linkCls("/learn")}>背单词</Link>
             <Link href="/check" className={linkCls("/check")}>检查</Link>
             <Link href="/import" className={linkCls("/import")}>导入</Link>

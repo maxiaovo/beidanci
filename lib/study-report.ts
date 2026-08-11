@@ -142,8 +142,18 @@ export async function createStudyReport(
     throw new ReportError("该时间段内没有答错或放弃的单词，无需生成报告", 400);
   }
 
-  const report = await prisma.studyReport.create({
-    data: { userId: subjectUserId, rangeStart: from, rangeEnd: to, createdBy, step: "collect" },
+  // 限额 check-then-create 收进事务：事务内 re-count 再 create，收窄双击并发突破窗口
+  // （无唯一约束可用，靠事务串行化兜底）
+  const report = await prisma.$transaction(async (tx) => {
+    const count = await tx.studyReport.count({
+      where: { userId: subjectUserId, createdAt: { gte: start } },
+    });
+    if (count >= REPORT_DAILY_LIMIT) {
+      throw new ReportError(`今天已生成 ${count} 次学习报告，每天最多 ${REPORT_DAILY_LIMIT} 次`, 429);
+    }
+    return tx.studyReport.create({
+      data: { userId: subjectUserId, rangeStart: from, rangeEnd: to, createdBy, step: "collect" },
+    });
   });
 
   // 后台异步生成（next start 常驻进程，请求返回后仍会继续执行）；失败落库为 failed

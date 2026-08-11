@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser, listChildUsers } from "@/lib/session";
+import { getStudyStreak } from "@/lib/streak";
 
 // 家长：孩子列表 + 学习统计（管理员等价于拥有全部学习者）
 export async function GET() {
@@ -24,19 +25,7 @@ export async function GET() {
       prisma.wordProgress.count({ where: { userId: u.id } }),
     ]);
     // 连续学习天数
-    const days = await prisma.studyLog.findMany({
-      where: { userId: u.id },
-      select: { createdAt: true },
-      orderBy: { createdAt: "desc" },
-    });
-    const daySet = new Set(days.map((d) => d.createdAt.toDateString()));
-    let streak = 0;
-    const cursor = new Date();
-    if (!daySet.has(cursor.toDateString())) cursor.setDate(cursor.getDate() - 1);
-    while (daySet.has(cursor.toDateString())) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    }
+    const streak = await getStudyStreak(u.id);
     result.push({
       id: u.id,
       username: u.username,

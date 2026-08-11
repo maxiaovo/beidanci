@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/session";
@@ -23,11 +24,30 @@ export async function POST(req: Request) {
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) return NextResponse.json({ error: "用户名已被占用" }, { status: 409 });
 
-  await prisma.$transaction([
-    prisma.user.create({
-      data: { username, passwordHash: bcrypt.hashSync(password, 10), role: "parent" },
-    }),
-    prisma.user.update({ where: { id: me.id }, data: { parent: { connect: { username } } } }),
-  ]);
+  const passwordHash = await bcrypt.hash(password, 10);
+  try {
+    // 检查+写入收进同一事务：事务内 re-check parentId 仍为空才绑定，挡住并发双请求
+    await prisma.$transaction(async (tx) => {
+      const fresh = await tx.user.findUnique({ where: { id: me.id }, select: { parentId: true } });
+      if (fresh?.parentId) throw new BoundConflict();
+      await tx.user.create({ data: { username, passwordHash, role: "parent" } });
+      await tx.user.update({ where: { id: me.id }, data: { parent: { connect: { username } } } });
+    });
+  } catch (e) {
+    if (e instanceof BoundConflict) {
+      return NextResponse.json({ error: "你已绑定家长，如需更换请先解绑" }, { status: 409 });
+    }
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      // 并发下同用户名被抢先注册
+      return NextResponse.json({ error: "用户名已被占用" }, { status: 409 });
+    }
+    throw e;
+  }
   return NextResponse.json({ ok: true, username });
+}
+
+class BoundConflict extends Error {
+  constructor() {
+    super("已绑定家长");
+  }
 }

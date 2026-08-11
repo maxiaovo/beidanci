@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
 import { NextResponse } from "next/server";
-import { getSessionUser, requireAdmin } from "@/lib/session";
+import { AuthError, getSessionUser, requireAdmin } from "@/lib/session";
 import {
   localVersion,
   latestVersion,
@@ -32,8 +32,11 @@ export async function GET(req: Request) {
 export async function POST() {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
 
   const status = effectiveStatus();

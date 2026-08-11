@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { requireAdmin } from "@/lib/session";
+import { AuthError, requireAdmin } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { AUDIO_DIR, synthesize } from "@/lib/tts";
 import { registerAudioVersion } from "@/lib/audio-versions";
@@ -14,8 +14,11 @@ function fileExists(name: string | null | undefined) {
 export async function GET() {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const words = await prisma.word.findMany({
     orderBy: [
@@ -66,8 +69,11 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
   const body = await req.json().catch(() => ({}));
   const wordId = typeof body.wordId === "string" ? body.wordId : "";

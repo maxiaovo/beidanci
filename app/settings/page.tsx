@@ -28,7 +28,10 @@ export default function SettingsPage() {
   const [checkMode, setCheckMode] = useState("spell");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarMsg, setAvatarMsg] = useState("");
+  // 上传成功后递增，用于头像 URL 版本号，避免每次渲染都重新下载
+  const [avatarVer, setAvatarVer] = useState(0);
   const [saved, setSaved] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -154,6 +157,7 @@ export default function SettingsPage() {
     const d = await res.json();
     if (res.ok) {
       setAvatarUrl(d.avatarUrl);
+      setAvatarVer((v) => v + 1);
       setAvatarMsg("✓ 头像已更新");
       router.refresh();
     } else {
@@ -183,7 +187,8 @@ export default function SettingsPage() {
   }
 
   async function save() {
-    await fetch("/api/settings", {
+    setSaveErr("");
+    const r = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -193,6 +198,11 @@ export default function SettingsPage() {
         theme,
       }),
     });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setSaveErr(d.error || "保存失败，请重试");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     router.refresh();
@@ -216,7 +226,7 @@ export default function SettingsPage() {
           >
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/api/avatars/${avatarUrl}?t=${Date.now()}`} alt="头像" className="w-full h-full object-cover" />
+              <img src={`/api/avatars/${avatarUrl}?v=${avatarVer}`} alt="头像" className="w-full h-full object-cover" />
             ) : (
               <span className="text-black/40 text-xs">上传头像</span>
             )}
@@ -335,6 +345,7 @@ export default function SettingsPage() {
         >
           {saved ? "✓ 已保存" : "保存"}
         </button>
+        {saveErr && <p className="text-sm text-red-500">{saveErr}</p>}
       </div>
 
       {/* 系统更新（仅管理员） */}

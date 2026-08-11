@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { DeepSeekRequestError, withWritingAiLock } from "@/lib/deepseek-client";
 import { getSessionUser, isParent } from "@/lib/session";
@@ -85,9 +86,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }));
     const focusResolved = focus.length === 0 || feedback.focusResolved;
     const passed = feedback.blockingIssues.length === 0 && focusResolved;
-    const version = task.attempts.length + 1;
     const usedHint = task.hintLevel > 0;
-    const attempt = await prisma.$transaction(async (tx) => {
+    // version 在事务内取 MAX(version)+1，避免并发提交撞 @@unique([taskId, version])；
+    // 仍可能被并发写撞上（SQLite 串行写），P2002 时重试一次
+    const createAttempt = () => prisma.$transaction(async (tx) => {
+      const max = await tx.writingAttempt.aggregate({
+        where: { taskId: task.id },
+        _max: { version: true },
+      });
+      const version = (max._max.version ?? 0) + 1;
       const created = await tx.writingAttempt.create({
         data: {
           taskId: task.id,
@@ -132,6 +139,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       }
       return created;
     });
+    let attempt;
+    try {
+      attempt = await createAttempt();
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        attempt = await createAttempt(); // 并发撞 version 唯一键，重试一次
+      } else {
+        throw e;
+      }
+    }
     if (passed) await finishOrExtendSession(task.sessionId, task.orderIndex);
     await recalculateWritingProfile(user.id);
     return NextResponse.json({
@@ -140,8 +157,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       guided: !passed && task.failedRounds + 1 >= 3,
     }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AI 服务暂时不可用";
-    const status = error instanceof DeepSeekRequestError && message.includes("正在处理") ? 409 : 502;
-    return NextResponse.json({ error: message }, { status });
+    // 409 是 withWritingAiLock 的固定提示，可安全展示；其余错误细节不外泄，只记服务端日志
+    if (error instanceof DeepSeekRequestError && error.message.includes("正在处理")) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    console.error("写作批改失败:", error);
+    return NextResponse.json({ error: "批改服务暂时不可用，请稍后重试" }, { status: 502 });
   }
 }

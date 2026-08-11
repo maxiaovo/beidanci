@@ -69,6 +69,9 @@ export default function ParentPage() {
   const [recoveryCorrectTarget, setRecoveryCorrectTarget] = useState(1);
   const [cyclicRecovery, setCyclicRecovery] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+  // 切换孩子时记录区的加载态，避免标题已换、记录仍是上一个孩子的
+  const [logsLoading, setLogsLoading] = useState(false);
   // 留言
   const [msgList, setMsgList] = useState<ChildMessage[]>([]);
   const [msgText, setMsgText] = useState("");
@@ -106,6 +109,10 @@ export default function ParentPage() {
     setRecoveryCorrectTarget(u.recoveryCorrectTarget ?? 1);
     setCyclicRecovery(!!u.cyclicRecovery);
     setMsgMsg("");
+    setSaveErr("");
+    setLogs([]);
+    setSkips([]);
+    setLogsLoading(true);
     loadMessages(u.id);
     const r = await fetch(`/api/parent/children/${u.id}`);
     if (r.ok) {
@@ -113,20 +120,41 @@ export default function ParentPage() {
       setLogs(d.logs);
       setSkips(d.skips ?? []);
     }
+    setLogsLoading(false);
   }
 
   async function saveTargets() {
     if (!selected) return;
-    await fetch(`/api/parent/children/${selected.id}`, {
+    setSaveErr("");
+    const nt = Number(newTarget);
+    const rt = Number(reviewTarget);
+    const rc = Number(recoveryCorrectTarget);
+    if (![nt, rt, rc].every((n) => Number.isFinite(n))) {
+      setSaveErr("请输入有效数字");
+      return;
+    }
+    // 夹取到合法区间（与输入框 min/max 一致）
+    const clampedNew = Math.min(200, Math.max(1, Math.round(nt)));
+    const clampedReview = Math.min(500, Math.max(1, Math.round(rt)));
+    const clampedRecovery = Math.min(5, Math.max(1, Math.round(rc)));
+    setNewTarget(clampedNew);
+    setReviewTarget(clampedReview);
+    setRecoveryCorrectTarget(clampedRecovery);
+    const r = await fetch(`/api/parent/children/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        dailyNewTarget: Number(newTarget),
-        dailyReviewTarget: Number(reviewTarget),
-        recoveryCorrectTarget: Number(recoveryCorrectTarget),
+        dailyNewTarget: clampedNew,
+        dailyReviewTarget: clampedReview,
+        recoveryCorrectTarget: clampedRecovery,
         cyclicRecovery,
       }),
     });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setSaveErr(d.error || "保存失败，请重试");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     load();
@@ -181,6 +209,7 @@ export default function ParentPage() {
             </div>
           ) : (
             <div className="bg-white rounded-2xl shadow overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-black/[.03] text-black/60">
                   <tr>
@@ -225,13 +254,14 @@ export default function ParentPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </section>
 
         {/* 孩子详情 */}
         {selected && (
-          <aside className="w-96 shrink-0 flex flex-col gap-4">
+          <aside className="w-full sm:w-96 shrink-0 flex flex-col gap-4">
             <div className="bg-white rounded-2xl shadow p-5">
               <h2 className="font-bold mb-1">{selected.username} 的每日任务</h2>
               <div className="flex flex-col gap-3 mt-3">
@@ -283,11 +313,14 @@ export default function ParentPage() {
                 >
                   {saved ? "✓ 已保存" : "保存修改"}
                 </button>
+                {saveErr && <p className="text-sm text-red-500">{saveErr}</p>}
               </div>
             </div>
             <div className="bg-white rounded-2xl shadow p-5 max-h-[50vh] overflow-y-auto">
               <h2 className="font-bold mb-3">最近记录</h2>
-              {logs.length === 0 && skips.length === 0 ? (
+              {logsLoading ? (
+                <p className="text-sm text-black/40">加载中…</p>
+              ) : logs.length === 0 && skips.length === 0 ? (
                 <p className="text-sm text-black/40">还没有学习记录</p>
               ) : (
                 <div className="flex flex-col gap-2 text-sm">
