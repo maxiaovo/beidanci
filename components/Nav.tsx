@@ -8,6 +8,7 @@ import {
   Books,
   CheckCircle,
   House,
+  Lock,
   PencilLine,
   Student,
   UserCircle,
@@ -33,15 +34,19 @@ const TABS = [
   { href: "/me", icon: UserCircle, label: "我的" },
 ];
 
-// 家长不参与学习，只看孩子
+// 家长不参与学习，只看孩子；学习入口可见但锁定，点击提示
+const PARENT_LOCKED_DESKTOP = ["首页", "写作", "单词书", "背单词", "检查", "导入"];
 const PARENT_TABS = [
-  { href: "/parent", icon: Student, label: "孩子" },
-  { href: "/me", icon: UserCircle, label: "我的" },
+  { href: "/parent", icon: Student, label: "孩子", locked: false },
+  { href: "/learn", icon: BookOpen, label: "背单词", locked: true },
+  { href: "/check", icon: CheckCircle, label: "检查", locked: true },
+  { href: "/me", icon: UserCircle, label: "我的", locked: false },
 ];
 
 export default function Nav() {
   const [me, setMe] = useState<Me | null>(null);
   const [site, setSite] = useState<SiteCfg>({ siteTitle: "背单词", hasSiteIcon: false });
+  const [toast, setToast] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
 
@@ -55,6 +60,12 @@ export default function Nav() {
       .then((d) => setSite({ siteTitle: d.siteTitle || "背单词", hasSiteIcon: !!d.hasSiteIcon }))
       .catch(() => {});
   }, [pathname]);
+
+  // 家长点击学习入口：只提示，不跳转
+  function parentBlocked() {
+    setToast("您是家长，只能监管孩子。");
+    setTimeout(() => setToast(null), 2000);
+  }
 
   const isAuthPage = pathname === "/login" || pathname === "/register";
   if (isAuthPage) return null;
@@ -94,6 +105,16 @@ export default function Nav() {
         {me && me.role === "parent" && (
           <nav className="hidden lg:flex items-center gap-1 overflow-x-auto whitespace-nowrap">
             <Link href="/parent" className={linkCls("/parent")}>孩子</Link>
+            {PARENT_LOCKED_DESKTOP.map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={parentBlocked}
+                className="px-3 py-1.5 rounded-full text-sm text-foreground/40 hover:bg-black/5 transition-colors"
+              >
+                <span className="inline-flex items-center gap-1"><Lock size={13} aria-hidden="true" />{label}</span>
+              </button>
+            ))}
             <Link href="/me" className={linkCls("/me")}>我的</Link>
           </nav>
         )}
@@ -170,12 +191,17 @@ export default function Nav() {
             {(me.role === "parent" ? PARENT_TABS : TABS).map((t) => {
               const Icon = t.icon;
               const active = isActive(t.href);
+              const cls = `flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${active ? "font-bold text-foreground" : "text-foreground/45"}`;
+              if ("locked" in t && t.locked) {
+                return (
+                  <button key={t.href} type="button" onClick={parentBlocked} className={cls}>
+                    <Icon size={20} weight="regular" aria-hidden="true" />
+                    <span className="inline-flex items-center gap-0.5"><Lock size={10} aria-hidden="true" />{t.label}</span>
+                  </button>
+                );
+              }
               return (
-                <Link
-                  key={t.href}
-                  href={t.href}
-                  className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${active ? "font-bold text-foreground" : "text-foreground/45"}`}
-                >
+                <Link key={t.href} href={t.href} className={cls}>
                   <Icon size={20} weight={active ? "fill" : "regular"} aria-hidden="true" />
                   {t.label}
                 </Link>
@@ -183,6 +209,13 @@ export default function Nav() {
             })}
           </div>
         </nav>
+      )}
+
+      {/* 家长点击锁定入口的提示 */}
+      {toast && (
+        <div className="fixed left-1/2 top-16 z-50 -translate-x-1/2 rounded-full bg-foreground px-5 py-2.5 text-sm font-bold text-white shadow-lg">
+          {toast}
+        </div>
       )}
     </>
   );

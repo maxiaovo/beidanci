@@ -199,6 +199,18 @@ model Setting {
   value String
 }
 
+// 家长↔孩子双向绑定邀约：一方输入对方用户名产生一条邀约，
+// 双方邀约互相匹配（同 parentId+childId、createdBy 相反）即完成绑定（落到 User.parentId）
+model BindingInvite {
+  id        String   @id @default(cuid())
+  parentId  String // 家长用户 id
+  childId   String // 孩子用户 id
+  createdBy String // parent | child（发起方角色）
+  createdAt DateTime @default(now())
+
+  @@unique([parentId, childId, createdBy])
+}
+
 // DeepSeek 生成结果是可复用资源：相同功能、提示词、模型与输入命中同一份产物。
 model AiResource {
   id          String   @id @default(cuid())

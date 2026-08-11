@@ -17,6 +17,7 @@ import {
   Sparkle,
   Target,
   UserCircle,
+  Users,
 } from "@phosphor-icons/react";
 
 interface Me {
@@ -214,11 +215,13 @@ export default function MePage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {(isParent ? [
             { href: "/parent", title: "孩子学习", desc: "查看与管理孩子的学习情况", icon: ChartLineUp },
+            { href: "/me/binding", title: "账号绑定", desc: "绑定或解绑孩子账号", icon: Users },
             { href: "/settings", title: "账号与外观", desc: "头像、主题和账号设置", icon: GearSix },
           ] : [
             { href: "/?plan=1", title: "每日任务", desc: "调整每本单词书的每日学习量", icon: CalendarDots },
             { href: "/words", title: "单词书", desc: "管理词书并查看分书进度", icon: Books },
             { href: "/writing", title: "写作训练", desc: "练习、历史记录与能力档案", icon: PencilLine },
+            { href: "/me/binding", title: "账号绑定", desc: "绑定家长账号或发出邀约", icon: Users },
             { href: "/settings", title: "系统设置", desc: "头像、学习目标、主题与偏好", icon: GearSix },
           ]).map((item) => {
             const Icon = item.icon;

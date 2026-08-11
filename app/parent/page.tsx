@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ParentWritingPanel from "@/components/ParentWritingPanel";
 import ParentReportPanel from "@/components/ParentReportPanel";
@@ -176,7 +177,7 @@ export default function ParentPage() {
           <h1 className="font-bold text-2xl mb-4">我的孩子</h1>
           {children.length === 0 ? (
             <div className="bg-white rounded-2xl shadow p-10 text-center text-black/40">
-              还没有绑定孩子，请联系管理员绑定
+              还没有绑定孩子，去 <Link href="/me/binding" className="text-accent font-bold hover:underline">账号绑定</Link> 页输入孩子的用户名发出邀约
             </div>
           ) : (
             <div className="bg-white rounded-2xl shadow overflow-hidden">
